@@ -1,0 +1,65 @@
+{
+  "default_model_id": "family_general_v1",
+  "models": [
+    {
+      "model_id": "family_general_v1",
+      "display_name": "Family General",
+      "endpoint": "http://127.0.0.1:8200/v1",
+      "api_key": "EMPTY",
+      "base_model": "llama3-base",
+      "lora_name": "family_general",
+      "model": "family_general",
+      "status": "ready",
+      "priority": 20,
+      "tags": ["family", "default", "llama3"]
+    },
+    {
+      "model_id": "father_strict_v1",
+      "display_name": "Father Strict",
+      "endpoint": "http://127.0.0.1:8200/v1",
+      "api_key": "EMPTY",
+      "base_model": "llama3-base",
+      "lora_name": "father_strict",
+      "model": "father_strict",
+      "status": "ready",
+      "priority": 100,
+      "tags": ["family", "father", "strict", "llama3"]
+    },
+    {
+      "model_id": "mother_warm_v1",
+      "display_name": "Mother Warm",
+      "endpoint": "http://127.0.0.1:8200/v1",
+      "api_key": "EMPTY",
+      "base_model": "llama3-base",
+      "lora_name": "mother_warm",
+      "model": "mother_warm",
+      "status": "ready",
+      "priority": 90,
+      "tags": ["family", "mother", "warm", "qwen"]
+    },
+    {
+      "model_id": "child_rebel_v1",
+      "display_name": "Child Rebel",
+      "endpoint": "http://127.0.0.1:8200/v1",
+      "api_key": "EMPTY",
+      "base_model": "llama3-base",
+      "lora_name": "child_rebel",
+      "model": "child_rebel",
+      "status": "ready",
+      "priority": 85,
+      "tags": ["family", "child", "rebel", "deepseek"]
+    },
+    {
+      "model_id": "school_general_v1",
+      "display_name": "School General",
+      "endpoint": "http://127.0.0.1:8200/v1",
+      "api_key": "EMPTY",
+      "base_model": "llama3-base",
+      "lora_name": "school_general",
+      "model": "school_general",
+      "status": "ready",
+      "priority": 60,
+      "tags": ["school", "default", "llama3"]
+    }
+  ]
+}
