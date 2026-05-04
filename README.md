@@ -1,8 +1,6 @@
 # MADS — Multi-Agent Dialogue System
 
-[![English](https://shields.io)](README.md) 
-
-[![中文](https://shields.io)](README.zh-CN.md)
+[![English](https://img.shields.io/badge/translate-en-blue?logo=github)](README.md) [![中文]( https://img.shields.io/badge/translate-Zh-blue?logo=github)](README.zh-CN.md)
 
 MADS is a **multi-agent role-playing dialogue research platform** focused on **family and school education conflict mediation**. Users configure multiple LLM-powered agents with distinct MBTI personality types and roles, and the system orchestrates conversations automatically with support for intervention experiments and statistical analysis.
 
