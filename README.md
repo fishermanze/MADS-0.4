@@ -7,7 +7,7 @@ MADS is a **multi-agent role-playing dialogue research platform** focused on **f
 ## Architecture
 
 ```
-Browser (React) → Vite Dev Proxy (:5173 → :8080) → Spring WebFlux (:8080)
+Browser (React) → Vite Dev Proxy (:3000 → :8080) → Spring WebFlux (:8080)
                                                         ├── MySQL (Auth)
                                                         ├── MongoDB (Chat Data)
                                                         └── Python Gateway (:9001)
@@ -26,10 +26,14 @@ Browser (React) → Vite Dev Proxy (:5173 → :8080) → Spring WebFlux (:8080)
 
 - **Multi-Role Dialogue** — Configure agents (father, mother, child, student, etc.), each with an LLM model, MBTI personality, and custom persona template
 - **Smart Routing** — Heuristic + LLM hybrid scoring algorithm decides who speaks next, with convergence detection (agreement keywords + Jaccard similarity + staleness check)
-- **Streaming Output** — SSE-based real-time message delivery with pause/resume support
+- **Streaming Output** — SSE-based real-time message delivery with pause/resume support (blocking + POST streaming)
 - **Intervention Experiments** — Change agent MBTI/persona mid-conversation, compare before/after effects, and rate outcomes
 - **Statistics & Analytics** — Router hit rates, convergence patterns, trend charts, CSV export
-- **Authentication** — JWT + phone/email OTP + captcha
+- **Authentication** — JWT-based username + password login
+- **Dark Mode** — System-wide light/dark theme toggle with CSS variables
+- **Resilience** — Retry with exponential backoff + circuit breaker (Java Resilience4j / Python tenacity)
+- **Observability** — X-Request-Id distributed tracing across all three tiers
+- **Docker Compose** — One-command deployment (MySQL + MongoDB + Python + Java + Nginx)
 
 ## Quick Start
 
@@ -71,10 +75,10 @@ java -jar target/MADSbaked-0.0.1-SNAPSHOT.jar   # Port :8080
 ```bash
 cd MADSfroend
 npm install
-npm run dev   # Port :5173, proxies /api to :8080
+npm run dev   # Port :3000, proxies /api to :8080
 ```
 
-Open `http://localhost:5173`. Default admin account: `admin` / `admin123`.
+Open `http://localhost:3000`. Default admin account: `admin` / `admin123`.
 
 ## Project Structure
 
@@ -83,29 +87,36 @@ FnPrj/
 ├── MADS/                          # Python AI Gateway
 │   ├── autogen_gateway.py         # FastAPI server (generation, evaluation, streaming)
 │   ├── dialog_router.py           # Dialog routing (heuristic / LLM / hybrid)
+│   ├── sentiment_analyzer.py      # Sentiment scoring for agent utterances
+│   ├── requirements.txt           # Python dependencies
+│   ├── Dockerfile                 # Gateway container image
 │   └── deploy/                    # Deployment scripts & model registry example
 ├── MADSbaked/                     # Java Spring Backend
+│   ├── Dockerfile                 # Multi-stage Maven build image
 │   └── src/main/java/com/gaoze/finaldesign/madsbaked/
-│       ├── auth/                  # Authentication (JWT / OTP / captcha)
+│       ├── auth/                  # Authentication (JWT)
+│       ├── config/                # Security / CORS / TraceId filter
 │       ├── controller/            # REST API (Chat controller)
 │       ├── services/              # Business logic (sessions / messages / interventions)
-│       └── services/integration/  # Python gateway HTTP client
+│       └── services/integration/  # Python gateway HTTP client (with retry+CB)
 └── MADSfroend/                    # React Frontend
     └── src/
-        ├── pages/                 # Pages (chat / intervention / statistics / login)
-        ├── components/            # Shared components
-        ├── api/                   # API wrappers
-        ├── context/               # Auth state management
-        ├── utils/                 # MBTI helpers / Axios config
+        ├── pages/                 # Pages (Landing / Login / Register / Chat / Intervention / Statistics / Settings)
+        ├── components/            # Shared components (SessionSidebar / MessageBubble / ModelConfigModal / InterventionModal / PersonaCreator / AuthShellVisuals)
+        ├── api/                   # API wrappers (auth / chat)
+        ├── context/               # Auth state + Theme context
+        ├── utils/                 # streamRequest (fetch POST SSE) / MBTI helpers / Axios config
         └── types/                 # TypeScript type definitions
+├── docker-compose.yml             # One-command full-stack deployment
+└── nginx.conf                     # Reverse proxy with X-Request-Id forwarding
 ```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/auth/login` | POST | Password / OTP login |
-| `/api/auth/register` | POST | Registration (OTP + captcha) |
+| `/api/auth/login` | POST | Username + password login |
+| `/api/auth/register` | POST | Register (username + password) |
 | `/api/chat/histories` | GET | Get chat history list (grouped by time) |
 | `/api/chat/sessions` | POST | Create new chat session |
 | `/api/chat/send-message` | POST | Send message (blocking) |
@@ -145,6 +156,16 @@ FnPrj/
 
 ## Deployment
 
+### Docker Compose (Recommended)
+
+```bash
+docker-compose up -d
+# Starts: MySQL + MongoDB + Python Gateway + Java Backend + Nginx
+# Frontend → http://localhost:80
+```
+
+### Manual
+
 See deployment scripts in `MADS/deploy/`:
 
 - `PORT_MAPPING.md` — Port assignments & Nginx reverse proxy configuration
@@ -155,7 +176,7 @@ See deployment scripts in `MADS/deploy/`:
 
 **Frontend**: React 19, TypeScript, Vite 7, React Router 7, Axios, react-markdown
 
-**Backend**: Spring Boot 3, Spring WebFlux, Spring Security (JWT), Spring Data MongoDB/Redis/Elasticsearch, Spring AMQP (RabbitMQ)
+**Backend**: Spring Boot 3, Spring WebFlux, Spring Security (JWT), Spring Data MongoDB/Redis/Elasticsearch, Resilience4j, Lombok
 
 **AI Service**: Python FastAPI, Microsoft AutoGen, vLLM, SGLang, LlamaFactory
 

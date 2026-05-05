@@ -2,6 +2,8 @@ package com.gaoze.finaldesign.madsbaked.repository.document;
 
 import com.gaoze.finaldesign.madsbaked.web.dto.ModelConfigDto;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -9,6 +11,9 @@ import java.time.Instant;
 import java.util.List;
 
 @Document("chat_sessions")
+@CompoundIndexes({
+        @CompoundIndex(name = "owner_updated_idx", def = "{'ownerUserId': 1, 'updatedAt': -1}")
+})
 public class ChatSessionDocument {
     @Id
     private String id;

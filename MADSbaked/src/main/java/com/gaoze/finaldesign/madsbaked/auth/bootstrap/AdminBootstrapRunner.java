@@ -45,10 +45,7 @@ public class AdminBootstrapRunner implements ApplicationRunner {
         User admin = new User();
         admin.setUsername(adminUsername);
         admin.setPasswordHash(passwordEncoder.encode(adminPassword));
-        admin.setPhone("13800000000");
-        admin.setEmail("admin@local");
         admin.setRole(UserRole.ADMIN);
-        admin.setPasswordTemporary(false);
         admin.setCreatedAt(Instant.now());
         admin.setUpdatedAt(Instant.now());
         userRepository.save(admin);

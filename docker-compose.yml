@@ -1,0 +1,79 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
+      MYSQL_DATABASE: mads_auth
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 3
+
+  mongodb:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      retries: 3
+
+  python-gateway:
+    build:
+      context: ./MADS
+      dockerfile: Dockerfile
+    ports:
+      - "9001:9001"
+    environment:
+      MADS_GATEWAY_PORT: "9001"
+      MADS_MODEL_ROUTES: ${MADS_MODEL_ROUTES:-}
+      MADS_MBTI_LORA_MAP: ${MADS_MBTI_LORA_MAP:-}
+      MADS_ROUTER_STRATEGY: hybrid
+      MADS_ROUTER_CONVERGENCE_THRESHOLD: "0.55"
+      MADS_AGENT_RUN_TIMEOUT_SECONDS: "60"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  java-backend:
+    build:
+      context: ./MADSbaked
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      MADS_MONGODB_URI: mongodb://mongodb:27017/mads_chat
+      MADS_DATASOURCE_URL: jdbc:mysql://mysql:3306/mads_auth?createDatabaseIfNotExist=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+      MADS_DATASOURCE_USERNAME: ${MADS_DATASOURCE_USERNAME:-root}
+      MADS_DATASOURCE_PASSWORD: ${MADS_DATASOURCE_PASSWORD:-changeme}
+      MADS_AUTOGEN_GATEWAY_URL: http://python-gateway:9001/autogen/generate
+      MADS_AUTOGEN_GATEWAY_STREAM_URL: http://python-gateway:9001/autogen/generate/stream
+      MADS_JWT_SECRET: ${MADS_JWT_SECRET:-production_random_secret_change_me}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      python-gateway:
+        condition: service_started
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - java-backend
+
+volumes:
+  mysql_data:
+  mongo_data:

@@ -3,15 +3,19 @@ import json
 import os
 import re
 import time
+import uuid
+import logging
 from urllib import request as urllib_request
 from urllib.parse import urlsplit, urlunsplit
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core.models import ModelInfo
+from cachetools import TTLCache
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from dialog_router import (
     AgentCandidate,
@@ -21,6 +25,12 @@ from dialog_router import (
     dispatch_round,
     evaluate_convergence,
 )
+
+logging.basicConfig(
+    format="%(asctime)s [%(trace_id)s] %(levelname)s %(name)s %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger("mads_gateway")
 
 
 class ModelConfig(BaseModel):
@@ -63,8 +73,27 @@ class ChatGenerateResponse(BaseModel):
 
 
 app = FastAPI(title="MADS AutoGen Gateway", version="0.3.0")
-_CLIENT_CACHE: Dict[str, OpenAIChatCompletionClient] = {}
+_CLIENT_CACHE: TTLCache = TTLCache(maxsize=64, ttl=600)
 _REGISTRY_CACHE: Dict[str, Any] = {"loaded_at": 0.0, "data": {}}
+
+
+class TraceIdFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, "trace_id"):
+            record.trace_id = "-"
+        return True
+
+
+logger.addFilter(TraceIdFilter())
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex[:16]
+    request.state.trace_id = trace_id
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = trace_id
+    return response
 
 
 def _cache_client_enabled() -> bool:
@@ -1850,7 +1879,7 @@ async def rate_intervention_slash(payload: InterventionRateRequest) -> Intervent
 
 
 @app.get("/autogen/health")
-def health() -> Dict[str, Any]:
+async def health() -> Dict[str, Any]:
     route_table = _parse_model_routes()
     registry = _get_model_registry()
     ready_registry_models = _registry_ready_models(registry)

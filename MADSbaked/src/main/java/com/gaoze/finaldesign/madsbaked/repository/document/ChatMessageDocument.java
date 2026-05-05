@@ -9,7 +9,9 @@ import java.time.Instant;
 
 @Document("chat_messages")
 @CompoundIndexes({
-        @CompoundIndex(name = "session_created_idx", def = "{'sessionId': 1, 'createdAt': 1}")
+        @CompoundIndex(name = "session_created_idx", def = "{'sessionId': 1, 'createdAt': 1}"),
+        @CompoundIndex(name = "session_rating_idx", def = "{'sessionId': 1, 'rating': 1}"),
+        @CompoundIndex(name = "session_fromUser_idx", def = "{'sessionId': 1, 'fromUser': 1}"),
 })
 public class ChatMessageDocument {
     @Id
@@ -20,6 +22,8 @@ public class ChatMessageDocument {
     private String content;
     private Instant createdAt;
     private boolean fromUser;
+    private Integer rating;
+    private String feedbackTag;
 
     public ChatMessageDocument() {
     }

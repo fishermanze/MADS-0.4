@@ -2,6 +2,15 @@ package com.gaoze.finaldesign.madsbaked.services.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gaoze.finaldesign.madsbaked.web.dto.ModelConfigDto;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
+import io.github.resilience4j.reactor.retry.RetryOperator;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
+import io.github.resilience4j.retry.RetryRegistry;
+import io.github.resilience4j.retry.IntervalFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +44,8 @@ public class PythonAutogenGatewayClient {
     private final Double convergenceThreshold;
     private final ObjectMapper objectMapper;
     private final AtomicBoolean streamEndpointEnabled = new AtomicBoolean(true);
+    private final Retry retry;
+    private final CircuitBreaker circuitBreaker;
 
     public PythonAutogenGatewayClient(
             WebClient.Builder webClientBuilder,
@@ -60,6 +71,22 @@ public class PythonAutogenGatewayClient {
         this.routerStrategy = routerStrategy == null || routerStrategy.isBlank() ? "none" : routerStrategy.trim();
         this.convergenceThreshold = convergenceThreshold;
         this.objectMapper = objectMapper;
+
+        RetryConfig retryConfig = RetryConfig.custom()
+                .maxAttempts(3)
+                .intervalFunction(IntervalFunction.ofExponentialBackoff(Duration.ofSeconds(1), 2.0))
+                .retryOnException(e -> !(e instanceof WebClientResponseException.BadRequest
+                        || e instanceof WebClientResponseException.NotFound))
+                .build();
+        this.retry = RetryRegistry.of(retryConfig).retry("gatewayRetry");
+
+        CircuitBreakerConfig cbConfig = CircuitBreakerConfig.custom()
+                .slidingWindowSize(10)
+                .failureRateThreshold(50)
+                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .permittedNumberOfCallsInHalfOpenState(3)
+                .build();
+        this.circuitBreaker = CircuitBreakerRegistry.of(cbConfig).circuitBreaker("gatewayCB");
     }
 
     public Mono<GenerationResult> generateReplies(
@@ -89,6 +116,8 @@ public class PythonAutogenGatewayClient {
                 .retrieve()
                 .bodyToMono(AutogenResponse.class)
                 .timeout(blockingTimeout)
+                .transformDeferred(RetryOperator.of(retry))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                 .map(response -> {
                     if (response == null || response.replies() == null) {
                         return new GenerationResult(List.of(), java.util.Map.of(
@@ -144,6 +173,8 @@ public class PythonAutogenGatewayClient {
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
                 .timeout(streamTimeout)
+                .transformDeferred(RetryOperator.of(retry))
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                 .map(event -> {
                     String eventType = event.event() == null ? "message" : event.event();
                     String eventData = event.data() == null ? "" : event.data();

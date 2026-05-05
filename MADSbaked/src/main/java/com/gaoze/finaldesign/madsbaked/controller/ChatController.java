@@ -106,14 +106,29 @@ public class ChatController {
                         ctx.admin()));
     }
 
-    @GetMapping(value = "/sessions/{sessionId}/auto-round/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> triggerAutoRoundStream(
-            @PathVariable String sessionId,
-            @RequestParam(required = false) String content
-    ) {
-        return principals.required()
-                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, content, ctx.userId(), ctx.admin()));
-    }
+    @GetMapping(value = "/sessions/{sessionId}/auto-round/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Deprecated
+    public Flux<ServerSentEvent<String>> triggerAutoRoundStreamGet(
+            @PathVariable String sessionId,
+            @RequestParam(required = false) String content
+    ) {
+        if (content == null || content.isEmpty()) {
+            content = "";
+        }
+        final String finalContent = content;
+        return principals.required()
+                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, finalContent, ctx.userId(), ctx.admin()));
+    }
+
+    @PostMapping(value = "/sessions/{sessionId}/auto-round/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> triggerAutoRoundStreamPost(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) AutoRoundRequest request
+    ) {
+        String content = request != null && request.content() != null ? request.content() : "";
+        return principals.required()
+                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, content, ctx.userId(), ctx.admin()));
+    }
 
     @PostMapping("/sessions/{sessionId}/auto-round/cancel")
     public Mono<Void> cancelAutoRoundStream(@PathVariable String sessionId) {

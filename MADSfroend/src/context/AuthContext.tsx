@@ -5,11 +5,7 @@ import type { AuthResponse, LoginCredential, UserInfo } from "../types/auth";
 function isUserInfo(raw: unknown): raw is UserInfo {
   if (!(raw !== null && typeof raw === "object")) return false;
   const r = raw as Record<string, unknown>;
-  if (typeof r.id !== "string" || typeof r.username !== "string" || typeof r.role !== "string") {
-    return false;
-  }
-  if ("mustSetPassword" in r && typeof r.mustSetPassword !== "boolean") return false;
-  return true;
+  return typeof r.id === "string" && typeof r.username === "string" && typeof r.role === "string";
 }
 function normalizeAuthPayload(res: AuthResponse): AuthResponse {
   if (

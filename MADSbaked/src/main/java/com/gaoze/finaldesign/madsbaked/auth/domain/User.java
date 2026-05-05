@@ -14,9 +14,7 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "users", indexes = {
-        @Index(name = "idx_users_username", columnList = "username", unique = true),
-        @Index(name = "idx_users_phone", columnList = "phone"),
-        @Index(name = "idx_users_email", columnList = "email")
+        @Index(name = "idx_users_username", columnList = "username", unique = true)
 })
 public class User {
 
@@ -24,18 +22,11 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 普通注册 3–64 位；邮箱验证码自动开户时可为完整邮箱（最长 190） */
     @Column(nullable = false, unique = true, length = 190)
     private String username;
 
     @Column(name = "password_hash", nullable = false, length = 120)
     private String passwordHash;
-
-    @Column(length = 32)
-    private String phone;
-
-    @Column(length = 128)
-    private String email;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -47,9 +38,17 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
-    /** 邮箱验证码自动创建的账号：需在前端引导设置正式登录密码 */
+    @SuppressWarnings("unused")
     @Column(name = "password_temporary", nullable = false)
     private boolean passwordTemporary = false;
+
+    @SuppressWarnings("unused")
+    @Column(length = 32)
+    private String phone;
+
+    @SuppressWarnings("unused")
+    @Column(length = 128)
+    private String email;
 
     public Long getId() {
         return id;
@@ -75,22 +74,6 @@ public class User {
         this.passwordHash = passwordHash;
     }
 
-    public String getPhone() {
-        return phone;
-    }
-
-    public void setPhone(String phone) {
-        this.phone = phone;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
     public UserRole getRole() {
         return role;
     }
@@ -113,13 +96,5 @@ public class User {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public boolean isPasswordTemporary() {
-        return passwordTemporary;
-    }
-
-    public void setPasswordTemporary(boolean passwordTemporary) {
-        this.passwordTemporary = passwordTemporary;
     }
 }

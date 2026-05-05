@@ -29,9 +29,7 @@ public class JwtWebFilter implements WebFilter {
                 ServerWebExchangeMatchers.pathMatchers(HttpMethod.OPTIONS, "/**"),
                 ServerWebExchangeMatchers.pathMatchers(
                         "/api/auth/login",
-                        "/api/auth/register",
-                        "/api/auth/otp/**",
-                        "/api/auth/captcha"
+                        "/api/auth/register"
                 ),
                 ServerWebExchangeMatchers.pathMatchers(
                         "/actuator/health",

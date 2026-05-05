@@ -9,7 +9,8 @@ import java.time.Instant;
 
 @Document("chat_round_metrics")
 @CompoundIndexes({
-        @CompoundIndex(name = "session_created_metric_idx", def = "{'sessionId': 1, 'createdAt': -1}")
+        @CompoundIndex(name = "session_created_metric_idx", def = "{'sessionId': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "session_rating_idx", def = "{'sessionId': 1, 'postMessageRating': 1}")
 })
 public class ChatRoundMetricDocument {
     @Id
@@ -21,6 +22,11 @@ public class ChatRoundMetricDocument {
     private Boolean routerApplied;
     private String reason;
     private Instant createdAt;
+    private Double heuristicTotal;
+    private Double llmTotal;
+    private Double finalScore;
+    private String chosenSpeaker;
+    private Double postMessageRating;
 
     public ChatRoundMetricDocument() {
     }

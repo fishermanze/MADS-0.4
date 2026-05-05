@@ -48,7 +48,6 @@ public class JwtService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", user.getRole() == null ? UserRole.USER.name() : user.getRole().name());
         claims.put("uid", user.getId() == null ? "" : String.valueOf(user.getId()));
-        claims.put("pwdTemp", user.isPasswordTemporary());
         return Jwts.builder()
                 .subject(user.getUsername())
                 .claims(claims)

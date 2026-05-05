@@ -59,6 +59,9 @@ export const chatApi = {
     const query = params.toString();
     return `/api/chat/sessions/${sessionId}/auto-round/stream${query ? `?${query}` : ""}`;
   },
+  autoRoundStreamPostUrl(sessionId: string) {
+    return `/api/chat/sessions/${sessionId}/auto-round/stream`;
+  },
   setPaused(sessionId: string, paused: boolean) {
     return request.patch<SessionMeta>(`/chat/sessions/${sessionId}/pause`, { paused });
   },

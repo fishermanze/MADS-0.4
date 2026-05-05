@@ -21,11 +21,10 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .pathMatchers(
                                 "/api/auth/login",
-                                "/api/auth/register",
-                                "/api/auth/otp/**",
-                                "/api/auth/captcha"
+                                "/api/auth/register"
                         ).permitAll()
                         .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .pathMatchers("/actuator/**").hasIpAddress("127.0.0.1")
                         .anyExchange().authenticated()
                 )
                 .build();

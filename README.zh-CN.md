@@ -7,7 +7,7 @@ MADS 是一个**多智能体角色扮演对话研究平台**，聚焦于**家庭
 ## 系统架构
 
 ```
-浏览器 (React) → Vite Dev Proxy (:5173 → :8080) → Spring WebFlux (:8080)
+浏览器 (React) → Vite Dev Proxy (:3000 → :8080) → Spring WebFlux (:8080)
                                                         ├── MySQL (用户认证)
                                                         ├── MongoDB (对话数据)
                                                         └── Python Gateway (:9001)
@@ -26,10 +26,14 @@ MADS 是一个**多智能体角色扮演对话研究平台**，聚焦于**家庭
 
 - **多角色对话** — 配置父亲/母亲/孩子/学生等角色，每个角色绑定 LLM 模型 + MBTI 人格 + 自定义人设模板
 - **智能路由** — 启发式 + LLM 混合评分算法自动决定下一发言人，支持收敛检测（协议关键词 + Jaccard 相似度 + 停滞检测）
-- **流式输出** — SSE 实时推送对话生成，支持暂停/恢复
+- **流式输出** — SSE 实时推送对话生成，支持暂停/恢复（阻塞 + POST 流式双模式）
 - **干预实验** — 中途修改角色 MBTI/人设，对比干预前后效果并评分
 - **统计分析** — 路由命中率、收敛模式、趋势图表，支持 CSV 导出
-- **认证系统** — JWT + 手机号/邮箱 OTP + 图形验证码
+- **认证系统** — JWT + 用户名密码登录
+- **深色模式** — 全系统 CSS 变量驱动的浅色/深色主题切换
+- **工程韧性** — 指数退避重试 + 熔断器（Java Resilience4j / Python tenacity）
+- **可观测性** — X-Request-Id 三层全链路追踪
+- **Docker 部署** — 一条命令启动全部服务（MySQL + MongoDB + Python + Java + Nginx）
 
 ## 快速开始
 
@@ -71,10 +75,10 @@ java -jar target/MADSbaked-0.0.1-SNAPSHOT.jar   # 端口 :8080
 ```bash
 cd MADSfroend
 npm install
-npm run dev   # 端口 :5173，API 代理到 :8080
+npm run dev   # 端口 :3000，API 代理到 :8080
 ```
 
-浏览器访问 `http://localhost:5173`，默认管理员账号 `admin` / `admin123`。
+浏览器访问 `http://localhost:3000`，默认管理员账号 `admin` / `admin123`。
 
 ## 项目结构
 
@@ -83,29 +87,36 @@ FnPrj/
 ├── MADS/                          # Python AI 网关
 │   ├── autogen_gateway.py         # FastAPI 主服务（生成、评估、流式输出）
 │   ├── dialog_router.py           # 对话路由算法（启发式/LLM/混合）
+│   ├── sentiment_analyzer.py      # Agent 发言情感评分
+│   ├── requirements.txt           # Python 依赖清单
+│   ├── Dockerfile                 # 网关容器镜像
 │   └── deploy/                    # 部署脚本与模型注册表示例
 ├── MADSbaked/                     # Java Spring 后端
+│   ├── Dockerfile                 # 多阶段 Maven 构建镜像
 │   └── src/main/java/com/gaoze/finaldesign/madsbaked/
-│       ├── auth/                  # 认证模块（JWT/OTP/验证码）
+│       ├── auth/                  # 认证模块（JWT）
+│       ├── config/                # 安全 / CORS / TraceId 过滤器
 │       ├── controller/            # REST API（Chat 控制器）
 │       ├── services/              # 业务逻辑（会话/消息/干预）
-│       └── services/integration/  # Python 网关 HTTP 客户端
+│       └── services/integration/  # Python 网关 HTTP 客户端（含重试+熔断）
 └── MADSfroend/                    # React 前端
     └── src/
-        ├── pages/                 # 页面（消息对话/干预实验/统计/登录注册）
-        ├── components/            # 通用组件
-        ├── api/                   # API 调用封装
-        ├── context/               # 认证状态管理
-        ├── utils/                 # MBTI 工具函数 / Axios 封装
+        ├── pages/                 # 页面（首页/登录/注册/对话/干预实验/统计/设置）
+        ├── components/            # 通用组件（侧边栏/消息气泡/模型配置弹窗/干预弹窗/人设创建器/认证视觉）
+        ├── api/                   # API 调用封装（auth/chat）
+        ├── context/               # 认证状态 + 主题切换上下文
+        ├── utils/                 # fetch POST SSE 流式工具 / MBTI 工具 / Axios 封装
         └── types/                 # TypeScript 类型定义
+├── docker-compose.yml             # 全栈一键部署
+└── nginx.conf                     # 反向代理（含 X-Request-Id 透传）
 ```
 
 ## API 端点概览
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/login` | POST | 密码/OTP 登录 |
-| `/api/auth/register` | POST | 注册（OTP + 验证码） |
+| `/api/auth/login` | POST | 用户名 + 密码登录 |
+| `/api/auth/register` | POST | 注册（用户名 + 密码） |
 | `/api/chat/histories` | GET | 获取对话历史列表（按时间分组） |
 | `/api/chat/sessions` | POST | 创建新对话会话 |
 | `/api/chat/send-message` | POST | 发送消息，返回阻塞结果 |
@@ -145,6 +156,16 @@ FnPrj/
 
 ## 部署
 
+### Docker Compose（推荐）
+
+```bash
+docker-compose up -d
+# 一键启动：MySQL + MongoDB + Python 网关 + Java 后端 + Nginx
+# 前端 → http://localhost:80
+```
+
+### 手动部署
+
 参见 `MADS/deploy/` 目录下的部署脚本：
 
 - `PORT_MAPPING.md` — 端口分配与 Nginx 反向代理配置
@@ -155,7 +176,7 @@ FnPrj/
 
 **前端**：React 19, TypeScript, Vite 7, React Router 7, Axios, react-markdown
 
-**后端**：Spring Boot 3, Spring WebFlux, Spring Security (JWT), Spring Data MongoDB/Redis/Elasticsearch, Spring AMQP (RabbitMQ)
+**后端**：Spring Boot 3, Spring WebFlux, Spring Security (JWT), Spring Data MongoDB/Redis/Elasticsearch, Resilience4j, Lombok
 
 **AI 服务**：Python FastAPI, Microsoft AutoGen, vLLM, SGLang, LlamaFactory
 
