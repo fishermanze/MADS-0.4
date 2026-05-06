@@ -50,4 +50,8 @@ public interface ChatServices {
     Mono<SessionMetaResponse> saveManualRating(String sessionId, int score, long userId, boolean admin);
 
     Mono<SessionMetaResponse> generateAiRating(String sessionId, long userId, boolean admin);
+
+    Mono<ChatMessageResponse> setMessageFeedback(String sessionId, String messageId, Integer rating, String feedbackTag, long userId, boolean admin);
+
+    Mono<String> exportSessionData(String sessionId, String format, long userId, boolean admin);
 }

@@ -6,3 +6,5 @@ pydantic
 tenacity
 cachetools
 jieba
+httpx
+pyyaml

@@ -1,0 +1,31 @@
+# 实验三：干预实验效果研究
+# 证明人格切换对对话走向有可测量的影响
+name: intervention_study
+scenario: FAMILY
+topic: "孩子沉迷手机每天刷短视频6小时，父亲没收手机，孩子情绪崩溃，母亲介入调解"
+models:
+  - {role: "孩子", modelName: llama3, mbti: INFP}
+  - {role: "父亲", modelName: qwen,   mbti: ENTJ}
+  - {role: "母亲", modelName: qwen,   mbti: ISFJ}
+runsPerCondition: 5
+maxRounds: 20
+conditions:
+  - name: "父亲ENTJ→ISFJ(变温和)"
+    strategy: hybrid
+    intervention: {agentRole: "父亲", fromMbti: ENTJ, toMbti: ISFJ, atRound: 5}
+
+  - name: "父亲ENTJ→ESTJ(不变-对照)"
+    strategy: hybrid
+    intervention: {agentRole: "父亲", fromMbti: ENTJ, toMbti: ESTJ, atRound: 5}
+
+  - name: "父亲ENTJ→ENTP(变灵活)"
+    strategy: hybrid
+    intervention: {agentRole: "父亲", fromMbti: ENTJ, toMbti: ENTP, atRound: 5}
+
+  - name: "无干预(基线)"
+    strategy: hybrid
+
+metrics:
+  - prePostSentimentDelta
+  - convergenceSpeedAfterIntervention
+  - agreementDensityChange

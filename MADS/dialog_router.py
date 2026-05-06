@@ -504,9 +504,13 @@ def _llm_score_via_chat(
         for h in state.history[-6:]
     ]
     sys = (
-        "你是多智能体对话调度器。基于场景目的, 为每个候选角色预测下一轮发言的:"
-        " (a) 情感倾向 (positive/neutral/tense/escalating/supportive),"
-        " (b) 目标推动力 0~1, (c) 综合选择得分 0~1。返回严格 JSON, 不要解释。"
+        "你是多智能体对话调度器。基于场景目的, 为每个候选角色预测下一轮发言的5维评分(每维0~1):\n"
+        "  goalImpact: 角色发言对场景目标的推动作用\n"
+        "  emotionFit: 角色情感状态与当前对话氛围的适配度\n"
+        "  cooldown: 角色需要冷却得分(最近发言越少得分越高)\n"
+        "  diversity: 角色贡献的视角多样性\n"
+        "  mbtiAlign: 角色MBTI人格与场景需求的契合度\n"
+        "返回严格JSON, 不要解释。"
     )
     user = json.dumps(
         {
@@ -518,8 +522,11 @@ def _llm_score_via_chat(
             "candidates": cand_brief,
             "outputSchema": {
                 "candidates": [
-                    {"agentId": "str", "predictedEmotion": "str",
-                     "goalImpact": "0..1", "score": "0..1", "reason": "str"}
+                    {"agentId": "str",
+                     "predictedEmotion": "positive|neutral|tense|escalating|supportive",
+                     "goalImpact": "0..1", "emotionFit": "0..1",
+                     "cooldown": "0..1", "diversity": "0..1",
+                     "mbtiAlign": "0..1", "score": "0..1", "reason": "str"}
                 ]
             },
         },
@@ -566,11 +573,16 @@ def _llm_score_via_chat(
             aid = str(it.get("agentId", "")).strip()
             if not aid:
                 continue
-            score = float(it.get("score", 0.5))
-            goal_impact = float(it.get("goalImpact", 0.5))
+            goal = float(it.get("goalImpact", 0.5))
+            emotion = float(it.get("emotionFit", 0.5))
+            cooldown = float(it.get("cooldown", 0.5))
+            diversity = float(it.get("diversity", 0.5))
+            mbti = float(it.get("mbtiAlign", 0.5))
+            total = float(it.get("score", 0.5))
             out[aid] = ScoreBreakdown(
-                goal=goal_impact, emotion_fit=score, cooldown=0.0, diversity=0.0,
-                mbti_align=0.0, total=score, predicted_emotion=str(it.get("predictedEmotion", "neutral")),
+                goal=goal, emotion_fit=emotion, cooldown=cooldown,
+                diversity=diversity, mbti_align=mbti, total=total,
+                predicted_emotion=str(it.get("predictedEmotion", "neutral")),
                 reason=f"LLM: {str(it.get('reason', ''))[:100]}",
             )
         return out or None
@@ -764,7 +776,13 @@ class RouterConfig:
     llm_timeout_seconds: float = 4.0
 
     @classmethod
-    def from_env_and_request(cls, req_strategy: str, req_threshold: Optional[float]) -> "RouterConfig":
+    def from_env_and_request(
+        cls,
+        req_strategy: str,
+        req_threshold: Optional[float],
+        req_weights: Optional[Dict[str, float]] = None,
+        req_seed: Optional[int] = None,
+    ) -> "RouterConfig":
         cfg = cls()
         if req_strategy and req_strategy != "none":
             cfg.strategy = req_strategy
@@ -777,8 +795,23 @@ class RouterConfig:
             cfg.convergence_threshold = _env_float("MADS_ROUTER_CONVERGENCE_THRESHOLD", 0.55)
         cfg.consecutive_required = _env_int("MADS_ROUTER_CONVERGENCE_CONSECUTIVE", 2)
         cfg.llm_timeout_seconds = _env_float("MADS_ROUTER_LLM_TIMEOUT_SECONDS", 4.0)
-        seed_env = os.getenv("MADS_ROUTER_SEED", "").strip()
-        cfg.seed = int(seed_env) if seed_env.isdigit() else None
+
+        if req_weights:
+            cfg.weights = req_weights
+        else:
+            env_weights = os.getenv("MADS_ROUTER_WEIGHTS", "").strip()
+            if env_weights:
+                try:
+                    cfg.weights = json.loads(env_weights)
+                except Exception:
+                    pass
+
+        if req_seed is not None:
+            cfg.seed = req_seed
+        else:
+            seed_env = os.getenv("MADS_ROUTER_SEED", "").strip()
+            cfg.seed = int(seed_env) if seed_env.isdigit() else None
+
         return cfg
 
 
@@ -790,6 +823,33 @@ def dispatch_round(
 ) -> RouterDecision:
     """单轮调度: 给定候选 + 状态 -> 选定发言者 + 收敛预判。"""
     rng = random.Random(config.seed if config.seed is not None else time.time_ns())
+
+    if config.strategy == "random":
+        chosen = rng.choice(candidates)
+        return RouterDecision(
+            turn=turn,
+            chosen_agent_id=chosen.agent_id,
+            chosen_role=chosen.role,
+            strategy="random",
+            scores={},
+            convergence=0.0,
+            should_stop=False,
+            stop_reason="",
+        )
+
+    if config.strategy == "round_robin":
+        idx = (turn - 1) % len(candidates)
+        chosen = candidates[idx]
+        return RouterDecision(
+            turn=turn,
+            chosen_agent_id=chosen.agent_id,
+            chosen_role=chosen.role,
+            strategy="round_robin",
+            scores={},
+            convergence=0.0,
+            should_stop=False,
+            stop_reason="",
+        )
 
     heur = heuristic_score(candidates, state, config.weights, config.cooldown_turns)
 

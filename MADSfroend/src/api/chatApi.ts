@@ -83,4 +83,7 @@ export const chatApi = {
   createPersonaTemplate(payload: CreatePersonaTemplateRequest) {
     return request.post<PersonaTemplate>("/personas/templates", payload);
   },
+  setMessageFeedback(sessionId: string, messageId: string, rating?: number, feedbackTag?: string) {
+    return request.patch<ChatMessage>(`/chat/sessions/${sessionId}/messages/${messageId}/feedback`, { rating, feedbackTag });
+  },
 };

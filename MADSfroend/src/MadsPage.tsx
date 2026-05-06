@@ -6,7 +6,8 @@ import SessionSidebar from "./components/SessionSidebar";
 import MessageBubble from "./components/MessageBubble";
 import ModelConfigModal from "./components/ModelConfigModal";
 import InterventionModal from "./components/InterventionModal";
-import PersonaCreator from "./components/PersonaCreator";
+import personacreator from "./components/PersonaCreator";
+import RouterInspector from "./components/RouterInspector";
 
 const EMPTY_GROUP: GroupedHistories = {
   TODAY: [],
@@ -92,6 +93,9 @@ function MadsPage() {
   const autoRoundPendingResolveRef = useRef<(() => void) | null>(null);
   const [streamingMessages, setStreamingMessages] = useState<StreamingMessage[]>([]);
   const [isStreamingRound, setIsStreamingRound] = useState(false);
+  const [routerDecisions, setRouterDecisions] = useState<Array<{ chosen_agent_id: string; strategy: string; reason: string; candidates: Array<{ agent_id: string; score: number; goal: number; emotion_fit: number; cooldown: number; diversity: number; mbti_align: number }> }>>([]);
+  const [convergenceHistory, setConvergenceHistory] = useState<Array<{ turn: number; score: number; shouldStop: boolean; reason: string; threshold: number }>>([]);
+  const [showInspector, setShowInspector] = useState(true);
 
   const loadHistories = useCallback(async (keyword?: string) => {
     setLoading(true);
@@ -160,6 +164,8 @@ function MadsPage() {
     }
     setStreamingMessages([]);
     setIsStreamingRound(false);
+    setRouterDecisions([]);
+    setConvergenceHistory([]);
   }, []);
 
   const closeActiveStream = useCallback(() => {
@@ -226,6 +232,20 @@ function MadsPage() {
             updated[updated.length - 1] = { ...updated[updated.length - 1], content: updated[updated.length - 1].content + data };
             return updated;
           });
+        });
+        eventSource.addEventListener("router_decision", (event) => {
+          try {
+            const data = (event as MessageEvent<string>).data ?? "{}";
+            const decision = JSON.parse(data);
+            setRouterDecisions((prev) => [...prev, decision]);
+          } catch { /* ignore */ }
+        });
+        eventSource.addEventListener("convergence", (event) => {
+          try {
+            const data = (event as MessageEvent<string>).data ?? "{}";
+            const conv = JSON.parse(data);
+            setConvergenceHistory((prev) => [...prev, conv]);
+          } catch { /* ignore */ }
         });
         eventSource.addEventListener("done", (event) => {
           try {
@@ -518,6 +538,9 @@ function MadsPage() {
                   <button className="primary-btn" onClick={() => void onResume()}>继续</button>
                 )}
                 <button className="ghost-btn" disabled={!sessionMeta?.paused} onClick={onOpenIntervention}>干预</button>
+                <button className="ghost-btn" onClick={() => setShowInspector((v) => !v)} title="路由器监控面板">
+                  {showInspector ? "隐藏路由" : "路由"}
+                </button>
               </div>
             </div>
             <div className="message-flow message-flow-single">
@@ -533,7 +556,9 @@ function MadsPage() {
                       interventionAnchorLabel={interventionAnchorLabel}
                       showFeedback={true}
                       onFeedback={(msgId, rating) => {
-                        console.debug(`反馈: ${msgId} -> ${rating}`);
+                        if (activeHistoryId) {
+                          void chatApi.setMessageFeedback(activeHistoryId, msgId, rating);
+                        }
                       }}
                     />
                   );
@@ -623,6 +648,15 @@ function MadsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeHistoryId && (
+        <RouterInspector
+          decisions={routerDecisions}
+          convergence={convergenceHistory}
+          visible={showInspector}
+          onToggle={() => setShowInspector(false)}
+        />
       )}
     </div>
   );

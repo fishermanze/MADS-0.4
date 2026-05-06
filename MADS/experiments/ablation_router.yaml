@@ -1,0 +1,35 @@
+# 实验一：路由器消融实验
+# 证明五维评分每维度都有贡献
+name: ablation_router
+scenario: FAMILY
+topic: "15岁孩子被发现在网上匿名发表负面言论攻击同学，家长与孩子沟通此行为"
+models:
+  - {role: "孩子", modelName: llama3, mbti: INFP}
+  - {role: "父亲", modelName: qwen,   mbti: ENTJ}
+  - {role: "母亲", modelName: qwen,   mbti: ISFJ}
+runsPerCondition: 5
+maxRounds: 15
+conditions:
+  - name: "完整五维"
+    routerWeights: {goal: 0.30, emotion_fit: 0.25, cooldown: 0.20, diversity: 0.10, mbti_align: 0.15}
+
+  - name: "移除goal"
+    routerWeights: {goal: 0.00, emotion_fit: 0.40, cooldown: 0.25, diversity: 0.15, mbti_align: 0.20}
+
+  - name: "移除emotion"
+    routerWeights: {goal: 0.40, emotion_fit: 0.00, cooldown: 0.25, diversity: 0.15, mbti_align: 0.20}
+
+  - name: "移除cooldown"
+    routerWeights: {goal: 0.35, emotion_fit: 0.30, cooldown: 0.00, diversity: 0.15, mbti_align: 0.20}
+
+  - name: "移除diversity"
+    routerWeights: {goal: 0.35, emotion_fit: 0.30, cooldown: 0.25, diversity: 0.00, mbti_align: 0.10}
+
+  - name: "移除mbti"
+    routerWeights: {goal: 0.35, emotion_fit: 0.30, cooldown: 0.25, diversity: 0.10, mbti_align: 0.00}
+
+metrics:
+  - avgConvergenceRound
+  - speakerBalance
+  - duplicateRate
+  - sentimentVolatility

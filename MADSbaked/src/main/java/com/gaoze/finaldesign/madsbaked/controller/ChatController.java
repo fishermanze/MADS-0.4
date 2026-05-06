@@ -162,27 +162,60 @@ public class ChatController {
                 .flatMap(ctx -> chatServices.generateEvaluation(sessionId, ctx.userId(), ctx.admin()));
     }
 
-    @PatchMapping("/sessions/{sessionId}/intervention/manual-rating")
-    public Mono<SessionMetaResponse> saveManualRating(
-            @PathVariable String sessionId,
-            @RequestBody ManualRatingRequest request
-    ) {
-        return principals.required()
-                .flatMap(ctx -> chatServices.saveManualRating(
-                        sessionId,
-                        request == null ? 0 : request.score(),
-                        ctx.userId(),
-                        ctx.admin()));
-    }
-
-    @PostMapping("/sessions/{sessionId}/intervention/ai-rating")
-    public Mono<SessionMetaResponse> generateAiRating(@PathVariable String sessionId) {
-        return principals.required()
-                .flatMap(ctx -> chatServices.generateAiRating(sessionId, ctx.userId(), ctx.admin()));
-    }
-
-    public record ManualRatingRequest(int score) {
-    }
-
-}
+    @PatchMapping("/sessions/{sessionId}/intervention/manual-rating")
+    public Mono<SessionMetaResponse> saveManualRating(
+            @PathVariable String sessionId,
+            @RequestBody ManualRatingRequest request
+    ) {
+        return principals.required()
+                .flatMap(ctx -> chatServices.saveManualRating(
+                        sessionId,
+                        request == null ? 0 : request.score(),
+                        ctx.userId(),
+                        ctx.admin()));
+    }
+
+    @PatchMapping("/sessions/{sessionId}/messages/{messageId}/feedback")
+    public Mono<ChatMessageResponse> setMessageFeedback(
+            @PathVariable String sessionId,
+            @PathVariable String messageId,
+            @RequestBody MessageFeedbackRequest request
+    ) {
+        return principals.required()
+                .flatMap(ctx -> chatServices.setMessageFeedback(
+                        sessionId,
+                        messageId,
+                        request == null ? null : request.rating(),
+                        request == null ? null : request.feedbackTag(),
+                        ctx.userId(),
+                        ctx.admin()));
+    }
+
+    @PostMapping("/sessions/{sessionId}/intervention/ai-rating")
+    public Mono<SessionMetaResponse> generateAiRating(@PathVariable String sessionId) {
+
+        return principals.required()
+
+                .flatMap(ctx -> chatServices.generateAiRating(sessionId, ctx.userId(), ctx.admin()));
+
+    }
+
+
+    @GetMapping("/sessions/{sessionId}/export")
+    public Mono<String> exportSessionData(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "json") String format
+    ) {
+        return principals.required()
+                .flatMap(ctx -> chatServices.exportSessionData(sessionId, format, ctx.userId(), ctx.admin()));
+    }
+
+
+    public record ManualRatingRequest(int score) {
+    }
+
+    public record MessageFeedbackRequest(Integer rating, String feedbackTag) {
+    }
+
+}
 

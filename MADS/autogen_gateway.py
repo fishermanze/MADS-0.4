@@ -24,7 +24,10 @@ from dialog_router import (
     RouterConfig,
     dispatch_round,
     evaluate_convergence,
+    KnowledgeShardModerator,
 )
+
+from sentiment_analyzer import score_sentiment
 
 logging.basicConfig(
     format="%(asctime)s [%(trace_id)s] %(levelname)s %(name)s %(message)s",
@@ -49,12 +52,14 @@ class ChatGenerateRequest(BaseModel):
     scenario: str = Field(default="FAMILY")
     userMessage: str
     models: List[ModelConfig] = Field(default_factory=list)
-    maxRounds: int = Field(default=1, ge=1, le=50)  # 调度器模式下作为"硬安全帽", 实际由收敛阈值提前停止
+    maxRounds: int = Field(default=1, ge=1, le=50)
     routerEnabled: bool = True
-    # —— 自研调度器 —— (默认 none = 沿用旧逻辑, 不影响存量请求)
-    routerStrategy: str = Field(default="none")  # none | heuristic | llm | hybrid
+    routerStrategy: str = Field(default="none")  # none | heuristic | llm | hybrid | random | round_robin
     convergenceThreshold: float | None = Field(default=None)
-    knowledgeBase: str | None = Field(default=None)  # 预留 Method 1 用
+    routerWeights: Dict[str, float] | None = Field(default=None)  # {goal, emotion_fit, cooldown, diversity, mbti_align}
+    knowledgeBase: str | None = Field(default=None)
+    seed: int | None = Field(default=None)
+    temperature: float | None = Field(default=None)
 
 
 class ReplyItem(BaseModel):
@@ -1346,6 +1351,8 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
     router_cfg = RouterConfig.from_env_and_request(
         req_strategy=request.routerStrategy,
         req_threshold=request.convergenceThreshold,
+        req_weights=request.routerWeights,
+        req_seed=request.seed,
     )
 
     replies: List[ReplyItem] = []
@@ -1394,6 +1401,13 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
             turn=turn,
         )
         # 收敛检查
+        sentiment = score_sentiment(captured_reply.content)
+        yield _sse("sentiment", json.dumps({
+            "speaker": captured_reply.speaker,
+            "turn": turn,
+            "valence": sentiment["valence"],
+            "arousal": sentiment["arousal"],
+        }, ensure_ascii=False))
         conv = evaluate_convergence(
             state=state,
             last_reply=captured_reply.content,
@@ -1422,6 +1436,18 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
             "status": "ok",
             "latencyMs": captured_reply.latencyMs,
             "schedulerStrategy": decision.strategy,
+            "scores": {
+                c.agent_id: {
+                    "total": round(c.breakdown.total, 4),
+                    "goal": round(c.breakdown.goal, 4),
+                    "emotion_fit": round(c.breakdown.emotion_fit, 4),
+                    "cooldown": round(c.breakdown.cooldown, 4),
+                    "diversity": round(c.breakdown.diversity, 4),
+                    "mbti_align": round(c.breakdown.mbti_align, 4),
+                } for c in decision.candidates
+            },
+            "chosenSpeaker": decision.chosen_agent_id,
+            "choiceReason": decision.reason,
         })
 
         if conv.should_stop:
@@ -1876,6 +1902,54 @@ async def rate_intervention(payload: InterventionRateRequest) -> InterventionRat
 @app.post("/autogen/intervention/rate/", response_model=InterventionRateResponse, include_in_schema=False)
 async def rate_intervention_slash(payload: InterventionRateRequest) -> InterventionRateResponse:
     return await rate_intervention(payload)
+
+
+@app.get("/autogen/health")
+async def health() -> Dict[str, Any]:
+
+
+@app.post("/autogen/knowledge/mediate")
+async def knowledge_mediate(payload: KnowledgeMediateRequest) -> Dict[str, Any]:
+    agents = [AgentCandidate(
+        agent_id=m.id or f"agent-{i}",
+        role=m.role or m.modelName,
+        mbti=m.mbti,
+        model_id=m.modelName,
+        persona_prompt=m.personaPrompt or "",
+    ) for i, m in enumerate(payload.models)]
+
+    moderator = KnowledgeShardModerator(
+        agents=agents,
+        min_jaccard=payload.minJaccard or 0.65,
+    )
+
+    shards = moderator.assign_shards(payload.corpus)
+    replies = {}
+    conflicts = []
+    for agent_id, shard in shards.items():
+        reply = f"[{agent_id}] 基于知识分片: {shard[:100]}..."
+        replies[agent_id] = reply
+
+    conflict_groups = moderator.find_conflicts(replies)
+    if conflict_groups:
+        for group in conflict_groups:
+            merge_prompt = moderator.merge_for_resolution(replies, group)
+            conflicts.append({
+                "conflictingAgents": group,
+                "mergePrompt": merge_prompt,
+            })
+
+    return {
+        "shards": {aid: s[:200] + "..." for aid, s in shards.items()},
+        "replies": replies,
+        "conflicts": conflicts,
+    }
+
+
+class KnowledgeMediateRequest(BaseModel):
+    corpus: str = Field(default="")
+    models: List[ModelConfig] = Field(default_factory=list)
+    minJaccard: float | None = Field(default=None)
 
 
 @app.get("/autogen/health")

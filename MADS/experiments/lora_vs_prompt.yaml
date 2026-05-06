@@ -1,0 +1,26 @@
+# 实验二：LoRA vs Prompt 人格注入对比
+# 证明 LoRA 比纯 prompt 更有效地塑造人格
+# 需要运行两次: 一次 MADS_MBTI_LORA_MAP 有值, 一次为空
+name: lora_vs_prompt
+scenario: FAMILY
+topic: "高三学生想放弃高考去学电竞专业，父母坚决反对，引发激烈家庭冲突"
+models:
+  - {role: "孩子", modelName: llama3, mbti: ENFP}
+  - {role: "父亲", modelName: qwen,   mbti: ISTJ}
+  - {role: "母亲", modelName: qwen,   mbti: ESFJ}
+runsPerCondition: 10
+maxRounds: 10
+conditions:
+  - name: "LoRA注入ENFP-ISTJ-ESFJ"
+    strategy: hybrid
+  - name: "LoRA注入INTP-ENTJ-ISFP"
+    strategy: hybrid
+  - name: "LoRA注入ESTP-INFJ-ENTJ"
+    strategy: hybrid
+
+metrics:
+  - personalityConsistency
+  - replyDiversity
+  - crossPersonalityDistinct
+  - sentimentVariance
+  - avgReplyLength

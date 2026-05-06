@@ -1,0 +1,33 @@
+# 实验四：路由策略对比
+# 证明混合策略优于启发式 > LLM > 随机基线
+name: router_strategies
+scenario: FAMILY
+topic: "几个话题轮换：孩子撒谎被揭穿 / 零花钱管理冲突 / 课外班选择分歧"
+models:
+  - {role: "孩子", modelName: llama3, mbti: ENTP}
+  - {role: "父亲", modelName: qwen,   mbti: ESTJ}
+  - {role: "母亲", modelName: qwen,   mbti: ISFJ}
+runsPerCondition: 5
+maxRounds: 15
+conditions:
+  - name: "random基线"
+    strategy: random
+    seed: 42
+
+  - name: "round_robin基线"
+    strategy: round_robin
+
+  - name: "heuristic启发式"
+    strategy: heuristic
+
+  - name: "llm评分"
+    strategy: llm
+
+  - name: "hybrid混合(默认)"
+    strategy: hybrid
+
+metrics:
+  - avgConvergenceRound
+  - speakerBalance
+  - duplicateRate
+  - avgLatencyMs

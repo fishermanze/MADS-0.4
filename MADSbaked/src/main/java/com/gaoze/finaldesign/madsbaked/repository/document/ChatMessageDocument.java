@@ -24,6 +24,10 @@ public class ChatMessageDocument {
     private boolean fromUser;
     private Integer rating;
     private String feedbackTag;
+    private Integer turn;
+    private Integer latencyMs;
+    private Double temperature;
+    private Boolean fallback;
 
     public ChatMessageDocument() {
     }

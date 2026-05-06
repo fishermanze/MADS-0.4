@@ -337,9 +337,25 @@ public class ChatServiceImpl implements ChatServices {
                     Instant.now(),
                     false
             );
+            Object turnObj = parsed.get("turn");
+            if (turnObj instanceof Number) {
+                doc.setTurn(((Number) turnObj).intValue());
+            }
+            Object latencyObj = parsed.get("latencyMs");
+            if (latencyObj instanceof Number) {
+                doc.setLatencyMs(((Number) latencyObj).intValue());
+            }
+            Object tempObj = parsed.get("temperature");
+            if (tempObj instanceof Number) {
+                doc.setTemperature(((Number) tempObj).doubleValue());
+            }
+            Object fallbackObj = parsed.get("fallback");
+            if (fallbackObj instanceof Boolean) {
+                doc.setFallback((Boolean) fallbackObj);
+            }
             session.setUpdatedAt(Instant.now());
-            log.info("[stream-persist] session={} speaker={} status={} contentLen={}",
-                    session.getId(), speaker, status, content.length());
+            log.info("[stream-persist] session={} speaker={} status={} turn={} latencyMs={} contentLen={}",
+                    session.getId(), speaker, status, doc.getTurn(), doc.getLatencyMs(), content.length());
             return chatMessageRepository.save(doc)
                     .then(chatSessionRepository.save(session))
                     .then();
@@ -486,6 +502,26 @@ public class ChatServiceImpl implements ChatServices {
                     return chatSessionRepository.save(session);
                 })
                 .map(ChatServiceImpl::toSessionMeta);
+    }
+
+    @Override
+    public Mono<ChatMessageResponse> setMessageFeedback(String sessionId, String messageId, Integer rating, String feedbackTag, long userId, boolean admin) {
+        return loadOwnedSession(sessionId, userId, admin)
+                .then(chatMessageRepository.findById(messageId))
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "消息不存在")))
+                .flatMap(msg -> {
+                    if (!msg.getSessionId().equals(sessionId)) {
+                        return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "消息不属于该会话"));
+                    }
+                    if (rating != null) {
+                        msg.setRating(Math.max(1, Math.min(5, rating)));
+                    }
+                    if (feedbackTag != null) {
+                        msg.setFeedbackTag(feedbackTag.trim().isEmpty() ? null : feedbackTag.trim());
+                    }
+                    return chatMessageRepository.save(msg);
+                })
+                .map(ChatServiceImpl::toMessageResponse);
     }
 
     @Override
@@ -636,6 +672,21 @@ public class ChatServiceImpl implements ChatServices {
                 asText(routerMeta.get("reason")),
                 Instant.now()
         );
+
+        Object dialogRouter = routerMeta.get("dialogRouter");
+        if (dialogRouter instanceof java.util.Map<?, ?> dr) {
+            metric.setFinalScore(asDouble(dr.get("convergenceThreshold")));
+            metric.setChosenSpeaker(asText(dr.get("stopReason")));
+        }
+
+        Object routeDecisions = routerMeta.get("routeDecisions");
+        if (routeDecisions instanceof java.util.List<?> list && !list.isEmpty()) {
+            Object last = list.get(list.size() - 1);
+            if (last instanceof java.util.Map<?, ?> lastMap) {
+                metric.setChosenSpeaker(asText(lastMap.get("role")));
+            }
+        }
+
         return chatRoundMetricRepository.save(metric).then();
     }
 
@@ -659,6 +710,14 @@ public class ChatServiceImpl implements ChatServices {
 
     private String asText(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Double asDouble(Object value) {
+        if (value instanceof Number n) return n.doubleValue();
+        if (value instanceof String s) {
+            try { return Double.parseDouble(s); } catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 
     private record ParsedDoneEvent(
@@ -848,5 +907,82 @@ public class ChatServiceImpl implements ChatServices {
                 model.modelName(),
                 "（本地降级回复）已收到你的发言，我将基于当前角色设定继续对话。"
         )).collect(Collectors.toList());
+    }
+
+    @Override
+    public Mono<String> exportSessionData(String sessionId, String format, long userId, boolean admin) {
+        return loadOwnedSession(sessionId, userId, admin)
+                .flatMap(session ->
+                    chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
+                            .collectList()
+                            .flatMap(messages ->
+                                chatRoundMetricRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
+                                        .collectList()
+                                        .map(metrics -> formatExport(session, messages, metrics, format))
+                            )
+                );
+    }
+
+    private String formatExport(ChatSessionDocument session, List<ChatMessageDocument> messages,
+                                 List<ChatRoundMetricDocument> metrics, String format) {
+        if ("csv".equalsIgnoreCase(format)) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("messageId,sessionId,speaker,roleTag,fromUser,content,turn,latencyMs,rating,feedbackTag,fallback,createdAt\n");
+            for (ChatMessageDocument m : messages) {
+                sb.append(escapeCsv(m.getId())).append(",")
+                  .append(escapeCsv(m.getSessionId())).append(",")
+                  .append(escapeCsv(m.getSpeaker())).append(",")
+                  .append(escapeCsv(m.getRoleTag())).append(",")
+                  .append(m.isFromUser()).append(",")
+                  .append(escapeCsv(m.getContent().replace("\n", " "))).append(",")
+                  .append(m.getTurn() == null ? "" : m.getTurn()).append(",")
+                  .append(m.getLatencyMs() == null ? "" : m.getLatencyMs()).append(",")
+                  .append(m.getRating() == null ? "" : m.getRating()).append(",")
+                  .append(escapeCsv(m.getFeedbackTag())).append(",")
+                  .append(m.getFallback()).append(",")
+                  .append(m.getCreatedAt()).append("\n");
+            }
+            return sb.toString();
+        }
+
+        try {
+            Map<String, Object> export = new java.util.HashMap<>();
+            export.put("sessionId", session.getId());
+            export.put("title", session.getTitle());
+            export.put("scenario", session.getScenario());
+            export.put("paused", session.isPaused());
+            export.put("interventionAt", session.getInterventionAt() == null ? null : session.getInterventionAt().toString());
+            export.put("messages", messages.stream().map(m -> {
+                Map<String, Object> map = new java.util.HashMap<>();
+                map.put("id", m.getId()); map.put("speaker", m.getSpeaker());
+                map.put("roleTag", m.getRoleTag()); map.put("fromUser", m.isFromUser());
+                map.put("content", m.getContent()); map.put("turn", m.getTurn());
+                map.put("latencyMs", m.getLatencyMs()); map.put("rating", m.getRating());
+                map.put("feedbackTag", m.getFeedbackTag()); map.put("fallback", m.getFallback());
+                map.put("createdAt", m.getCreatedAt().toString());
+                return map;
+            }).collect(Collectors.toList()));
+            export.put("roundMetrics", metrics.stream().map(m -> {
+                Map<String, Object> map = new java.util.HashMap<>();
+                map.put("mode", m.getMode()); map.put("routerConfigured", m.getRouterConfigured());
+                map.put("routerAttempted", m.getRouterAttempted()); map.put("routerApplied", m.getRouterApplied());
+                map.put("reason", m.getReason()); map.put("chosenSpeaker", m.getChosenSpeaker());
+                map.put("heuristicTotal", m.getHeuristicTotal()); map.put("llmTotal", m.getLlmTotal());
+                map.put("finalScore", m.getFinalScore());
+                map.put("createdAt", m.getCreatedAt().toString());
+                return map;
+            }).collect(Collectors.toList()));
+            return objectMapper.writeValueAsString(export);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "导出失败: " + e.getMessage());
+        }
+    }
+
+    private String escapeCsv(String value) {
+        if (value == null) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            return "\"" + value.replace("\"", "\"\"") + "\"";
+        }
+        return value;
     }
 }
