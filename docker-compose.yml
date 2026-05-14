@@ -34,10 +34,14 @@ services:
     environment:
       MADS_GATEWAY_PORT: "9001"
       MADS_MODEL_ROUTES: ${MADS_MODEL_ROUTES:-}
+      MADS_MODEL_REGISTRY_PATH: ${MADS_MODEL_REGISTRY_PATH:-./deploy/model_registry_qwen_only.json}
       MADS_MBTI_LORA_MAP: ${MADS_MBTI_LORA_MAP:-}
-      MADS_ROUTER_STRATEGY: hybrid
+      MADS_SGLANG_LORA_MODEL_FORMAT: ${MADS_SGLANG_LORA_MODEL_FORMAT:-adapter_only}
+      MADS_ROUTER_STRATEGY: ${MADS_ROUTER_STRATEGY:-consensus}
       MADS_ROUTER_CONVERGENCE_THRESHOLD: "0.55"
-      MADS_AGENT_RUN_TIMEOUT_SECONDS: "60"
+      MADS_AGENT_MAX_TOKENS: "1024"
+      MADS_AGENT_RUN_TIMEOUT_SECONDS: "120"
+      MADS_OPINION_LLM_ENDPOINT: ${MADS_OPINION_LLM_ENDPOINT:-http://sglang-qwen:8002/v1}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -57,6 +61,7 @@ services:
       MADS_AUTOGEN_GATEWAY_URL: http://python-gateway:9001/autogen/generate
       MADS_AUTOGEN_GATEWAY_STREAM_URL: http://python-gateway:9001/autogen/generate/stream
       MADS_JWT_SECRET: ${MADS_JWT_SECRET:-production_random_secret_change_me}
+
     depends_on:
       mysql:
         condition: service_healthy
