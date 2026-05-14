@@ -1,0 +1,35 @@
+# 实验五：共识调度策略对比
+# 证明共识驱动的渐进式调度优于固定轮次调度
+name: consensus_scheduler
+scenario: FAMILY
+topic: "孩子期中成绩大幅下滑，老师反映上课走神、作业质量差"
+models:
+  - {role: "父亲", modelName: qwen, mbti: ENTJ}
+  - {role: "母亲", modelName: qwen, mbti: ISFJ}
+  - {role: "孩子", modelName: qwen, mbti: INFP}
+runsPerCondition: 5
+maxRounds: 18
+conditions:
+  - name: "consensus(共识调度)"
+    strategy: consensus
+    seed: 42
+    convergenceThreshold: 0.55
+
+  - name: "hybrid(混合调度)"
+    strategy: hybrid
+    seed: 42
+
+  - name: "heuristic(启发式)"
+    strategy: heuristic
+    seed: 42
+
+  - name: "random(随机基线)"
+    strategy: random
+    seed: 42
+
+metrics:
+  - avgConvergenceRound
+  - speakerBalance
+  - opinionFlipCount
+  - divergenceAtTermination
+  - phaseTransitionCount

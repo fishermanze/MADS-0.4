@@ -35,6 +35,7 @@ export interface CreateSessionRequest {
   topic: string;
   scenario: ScenarioType;
   models: ModelConfig[];
+  sessionType?: string;
 }
 
 export interface ChatMessage {
@@ -96,4 +97,34 @@ export interface ChatMetrics {
     cumulativeAttemptRate: number;
     cumulativeApplyRate: number;
   }>;
+}
+
+export interface OpinionSnapshot {
+  id: string;
+  sessionId: string;
+  turn: number;
+  agentOpinions: string;
+  pairwiseDistances: string;
+  avgDistance: number | null;
+  allStable: boolean | null;
+  createdAt: string;
+}
+
+export interface RouterRoundDetail {
+  id: string;
+  sessionId: string;
+  mode: string | null;
+  routerConfigured: boolean | null;
+  routerAttempted: boolean | null;
+  routerApplied: boolean | null;
+  reason: string | null;
+  chosenSpeaker: string | null;
+  heuristicTotal: number | null;
+  llmTotal: number | null;
+  finalScore: number | null;
+  postMessageRating: number | null;
+  agentScores: string | null;
+  interventionRound: boolean | null;
+  interventionIndex: number | null;
+  createdAt: string | null;
 }

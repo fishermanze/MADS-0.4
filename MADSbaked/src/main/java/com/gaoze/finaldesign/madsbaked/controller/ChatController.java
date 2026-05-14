@@ -3,13 +3,16 @@ package com.gaoze.finaldesign.madsbaked.controller;
 import com.gaoze.finaldesign.madsbaked.auth.security.ReactiveChatPrincipal;
 import com.gaoze.finaldesign.madsbaked.services.ChatServices;
 import com.gaoze.finaldesign.madsbaked.web.dto.ChatMessageResponse;
-import com.gaoze.finaldesign.madsbaked.web.dto.ChatMetricsResponse;
+import com.gaoze.finaldesign.madsbaked.web.dto.ChatMetricsResponse;
+import com.gaoze.finaldesign.madsbaked.web.dto.RouterRoundDetail;
 import com.gaoze.finaldesign.madsbaked.web.dto.CreateSessionRequest;
 import com.gaoze.finaldesign.madsbaked.web.dto.GroupedHistoryResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.HistoryItemResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.InterventionRequest;
 import com.gaoze.finaldesign.madsbaked.web.dto.AutoRoundRequest;
-import com.gaoze.finaldesign.madsbaked.web.dto.PauseRequest;
+import com.gaoze.finaldesign.madsbaked.web.dto.PauseRequest;
+import com.gaoze.finaldesign.madsbaked.repository.OpinionSnapshotRepository;
+import com.gaoze.finaldesign.madsbaked.repository.document.OpinionSnapshotDocument;
 import com.gaoze.finaldesign.madsbaked.web.dto.RenameHistoryRequest;
 import com.gaoze.finaldesign.madsbaked.web.dto.SessionMetaResponse;
 import org.springframework.http.MediaType;
@@ -31,13 +34,16 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
-    private final ChatServices chatServices;
-    private final ReactiveChatPrincipal principals;
-
-    public ChatController(ChatServices chatServices, ReactiveChatPrincipal principals) {
-        this.chatServices = chatServices;
-        this.principals = principals;
-    }
+    private final ChatServices chatServices;
+    private final OpinionSnapshotRepository opinionSnapshotRepository;
+    private final ReactiveChatPrincipal principals;
+
+    public ChatController(ChatServices chatServices, ReactiveChatPrincipal principals,
+                          OpinionSnapshotRepository opinionSnapshotRepository) {
+        this.chatServices = chatServices;
+        this.principals = principals;
+        this.opinionSnapshotRepository = opinionSnapshotRepository;
+    }
 
     @GetMapping("/histories")
     public Mono<GroupedHistoryResponse> getHistories(@RequestParam(required = false) String keyword) {
@@ -110,14 +116,17 @@ public class ChatController {
     @Deprecated
     public Flux<ServerSentEvent<String>> triggerAutoRoundStreamGet(
             @PathVariable String sessionId,
-            @RequestParam(required = false) String content
+            @RequestParam(required = false) String content,
+            @RequestParam(required = false) String strategy,
+            @RequestParam(required = false) Integer maxRounds
     ) {
         if (content == null || content.isEmpty()) {
             content = "";
         }
         final String finalContent = content;
+        final String finalStrategy = strategy;
         return principals.required()
-                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, finalContent, ctx.userId(), ctx.admin()));
+                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, finalContent, finalStrategy, maxRounds, ctx.userId(), ctx.admin()));
     }
 
     @PostMapping(value = "/sessions/{sessionId}/auto-round/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -127,7 +136,7 @@ public class ChatController {
     ) {
         String content = request != null && request.content() != null ? request.content() : "";
         return principals.required()
-                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, content, ctx.userId(), ctx.admin()));
+                .flatMapMany(ctx -> chatServices.triggerAutoRoundStream(sessionId, content, null, ctx.userId(), ctx.admin()));
     }
 
     @PostMapping("/sessions/{sessionId}/auto-round/cancel")
@@ -162,6 +171,12 @@ public class ChatController {
                 .flatMap(ctx -> chatServices.generateEvaluation(sessionId, ctx.userId(), ctx.admin()));
     }
 
+    @GetMapping("/sessions/{sessionId}/router-rounds")
+    public Flux<RouterRoundDetail> getRouterRoundDetails(@PathVariable String sessionId) {
+        return principals.required()
+                .flatMapMany(ctx -> chatServices.getRouterRoundDetails(sessionId, ctx.userId(), ctx.admin()));
+    }
+
     @PatchMapping("/sessions/{sessionId}/intervention/manual-rating")
     public Mono<SessionMetaResponse> saveManualRating(
             @PathVariable String sessionId,
@@ -215,6 +230,12 @@ public class ChatController {
     }
 
     public record MessageFeedbackRequest(Integer rating, String feedbackTag) {
+    }
+
+    @GetMapping("/sessions/{sessionId}/opinions")
+    public Flux<OpinionSnapshotDocument> getOpinionSnapshots(@PathVariable String sessionId) {
+        return principals.required()
+                .flatMapMany(ctx -> opinionSnapshotRepository.findBySessionIdOrderByTurnAsc(sessionId));
     }
 
 }

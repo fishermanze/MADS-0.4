@@ -10,6 +10,8 @@ import type {
   PersonaTemplate,
   CreatePersonaTemplateRequest,
   ChatMetrics,
+  RouterRoundDetail,
+  OpinionSnapshot,
 } from "../types/chat";
 
 export const chatApi = {
@@ -42,12 +44,12 @@ export const chatApi = {
     return request.get<ChatMetrics>(`/chat/sessions/${sessionId}/metrics`);
   },
   autoRound(sessionId: string, content?: string) {
-    return request.post<ChatMessage[]>(`/chat/sessions/${sessionId}/auto-round`, { content: content ?? "" });
+    return request.post<ChatMessage[]>(`/chat/sessions/${sessionId}/auto-round`, { content: content ?? "" }, { timeout: 300000 });
   },
   cancelAutoRound(sessionId: string) {
     return request.post<void>(`/chat/sessions/${sessionId}/auto-round/cancel`);
   },
-  autoRoundStreamUrl(sessionId: string, content?: string) {
+  autoRoundStreamUrl(sessionId: string, content?: string, strategy?: string, maxRounds?: number) {
     const params = new URLSearchParams();
     if (content && content.trim()) {
       params.set("content", content.trim());
@@ -55,6 +57,12 @@ export const chatApi = {
     const token = typeof localStorage !== "undefined" ? localStorage.getItem("token") : null;
     if (token) {
       params.set("access_token", token);
+    }
+    if (strategy && strategy.trim()) {
+      params.set("strategy", strategy.trim());
+    }
+    if (maxRounds != null && maxRounds > 0) {
+      params.set("maxRounds", String(maxRounds));
     }
     const query = params.toString();
     return `/api/chat/sessions/${sessionId}/auto-round/stream${query ? `?${query}` : ""}`;
@@ -85,5 +93,11 @@ export const chatApi = {
   },
   setMessageFeedback(sessionId: string, messageId: string, rating?: number, feedbackTag?: string) {
     return request.patch<ChatMessage>(`/chat/sessions/${sessionId}/messages/${messageId}/feedback`, { rating, feedbackTag });
+  },
+  getRouterRoundDetails(sessionId: string) {
+    return request.get<RouterRoundDetail[]>(`/chat/sessions/${sessionId}/router-rounds`);
+  },
+  getOpinionSnapshots(sessionId: string) {
+    return request.get<OpinionSnapshot[]>(`/chat/sessions/${sessionId}/opinions`);
   },
 };

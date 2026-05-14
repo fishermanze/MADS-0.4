@@ -10,7 +10,7 @@ set -euo pipefail
 # 9001 -> autogen_gateway
 
 PROJECT_ROOT="${PROJECT_ROOT:-/opt/mads}"
-REGISTRY_PATH="${REGISTRY_PATH:-$PROJECT_ROOT/deploy/model_registry.example.json}"
+REGISTRY_PATH="${REGISTRY_PATH:-$PROJECT_ROOT/deploy/model_registry_qwen_only.json}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 LLAMAFACTORY_CMD="${LLAMAFACTORY_CMD:-llamafactory-cli}"
 GATEWAY_PORT="${GATEWAY_PORT:-9001}"
@@ -45,5 +45,6 @@ export MADS_DISABLE_CLIENT_CACHE="false"
 export MADS_PERSONA_MODEL_MAP='{"preset-father-strict":"father_strict_v1","preset-mother-warm":"mother_warm_v1","preset-child-rebel":"child_rebel_v1"}'
 export MADS_GATEWAY_PORT="$GATEWAY_PORT"
 
+echo $MADS_MODEL_REGISTRY_PATH
 cd "$PROJECT_ROOT"
 exec "$PYTHON_BIN" ./autogen_gateway.py

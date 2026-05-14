@@ -5,6 +5,7 @@ import com.gaoze.finaldesign.madsbaked.web.dto.CreateSessionRequest;
 import com.gaoze.finaldesign.madsbaked.web.dto.GroupedHistoryResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.HistoryItemResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.ChatMetricsResponse;
+import com.gaoze.finaldesign.madsbaked.web.dto.RouterRoundDetail;
 import com.gaoze.finaldesign.madsbaked.web.dto.ModelConfigDto;
 import com.gaoze.finaldesign.madsbaked.web.dto.SessionMetaResponse;
 import org.springframework.http.codec.ServerSentEvent;
@@ -41,9 +42,15 @@ public interface ChatServices {
 
     Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, long userId, boolean admin);
 
+    Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, String strategy, long userId, boolean admin);
+
+    Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, String strategy, Integer maxRounds, long userId, boolean admin);
+
     Mono<Void> cancelAutoRoundStream(String sessionId, long userId, boolean admin);
 
     Mono<ChatMetricsResponse> getSessionMetrics(String sessionId, long userId, boolean admin);
+
+    Flux<RouterRoundDetail> getRouterRoundDetails(String sessionId, long userId, boolean admin);
 
     Mono<SessionMetaResponse> generateEvaluation(String sessionId, long userId, boolean admin);
 

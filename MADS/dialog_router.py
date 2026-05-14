@@ -423,6 +423,32 @@ def _dialog_llm_endpoint() -> Optional[Dict[str, str]]:
             key = os.getenv("MADS_REMOTE_OPENAI_KEY", "EMPTY").strip() or "EMPTY"
 
     if not base or not model:
+        route_table = _parse_dialog_model_routes()
+        if route_table:
+            first_key = next(iter(route_table), None)
+            if first_key:
+                first = route_table[first_key]
+                base = str(first.get("base_url") or "").strip()
+                model = _base_model_name(str(first.get("base_model") or first.get("model") or "").strip(), first_key)
+                key = str(first.get("api_key") or "").strip() or "EMPTY"
+        if not base or not model:
+            model_registry_json = os.getenv("MADS_MODEL_REGISTRY_JSON", "").strip()
+            if model_registry_json:
+                try:
+                    import json as _json
+                    registry = _json.loads(model_registry_json)
+                    models = registry.get("models", [])
+                    if models and isinstance(models, list):
+                        first = models[0]
+                        if isinstance(first, dict):
+                            base = str(first.get("endpoint") or "").strip()
+                            model = str(first.get("base_model") or first.get("model") or "").strip()
+                            key = str(first.get("api_key") or "EMPTY").strip() or "EMPTY"
+                            if ":" in model:
+                                model = model.split(":", 1)[0]
+                except Exception:
+                    pass
+    if not base or not model:
         return None
     return {
         "base_url": _normalize_openai_base(base),
@@ -764,10 +790,12 @@ def _all_candidates_spoken(state: DialogState) -> bool:
 
 @dataclass
 class RouterConfig:
-    strategy: str = "hybrid"             # heuristic | llm | hybrid | none
+    strategy: str = "hybrid"             # heuristic | llm | hybrid | none | random | round_robin | consensus
     cooldown_turns: int = 1
     convergence_threshold: float = 0.65
     consecutive_required: int = 2
+    quorum_ratio: float = 0.5             # α: 法定人数比例
+    stability_window: int = 3             # β: 连续稳定轮次
     seed: Optional[int] = None
     weights: Dict[str, float] = field(default_factory=lambda: {
         "goal": 0.30, "emotion_fit": 0.25, "cooldown": 0.20,

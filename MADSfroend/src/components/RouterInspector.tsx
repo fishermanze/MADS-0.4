@@ -1,20 +1,24 @@
 import { useState } from "react";
 
 interface RouterCandidate {
-  agent_id: string;
-  score: number;
+  agentId: string;
+  total: number;
   goal: number;
-  emotion_fit: number;
+  emotionFit: number;
   cooldown: number;
   diversity: number;
-  mbti_align: number;
+  mbtiAlign: number;
 }
 
 interface RouterDecisionEvent {
-  chosen_agent_id: string;
+  chosenAgentId: string;
+  chosenRole: string;
   strategy: string;
-  reason: string;
-  candidates: RouterCandidate[];
+  turn: number;
+  scores: RouterCandidate[];
+  convergence: number;
+  shouldStop: boolean;
+  stopReason: string;
 }
 
 interface ConvergenceEvent {
@@ -65,26 +69,24 @@ export default function RouterInspector({ decisions, convergence, visible, onTog
           <h5>当前轮决策</h5>
           <div className="ri-meta">
             <span>策略：<strong>{lastDecision.strategy}</strong></span>
-            <span>选中：<strong>{lastDecision.chosen_agent_id}</strong></span>
+            <span>选中：<strong>{lastDecision.chosenAgentId}</strong></span>
           </div>
-          <p className="ri-reason">{lastDecision.reason}</p>
+          <p className="ri-reason">{lastDecision.stopReason || ""}</p>
 
           <h5>候选者评分</h5>
-          {lastDecision.candidates
-            .sort((a, b) => b.score - a.score)
-            .map((c) => (
-              <div key={c.agent_id} className={`ri-candidate ${c.agent_id === lastDecision.chosen_agent_id ? "chosen" : ""}`}>
-                <div className="ri-candidate-header">
-                  <strong>{c.agent_id}</strong>
-                  <span className="ri-total">{c.score.toFixed(2)}</span>
-                </div>
-                <ScoreBar label="目标" value={c.goal} max={0.3} />
-                <ScoreBar label="情感" value={c.emotion_fit} max={0.25} />
-                <ScoreBar label="冷却" value={c.cooldown} max={0.2} />
-                <ScoreBar label="多样性" value={c.diversity} max={0.1} />
-                <ScoreBar label="MBTI" value={c.mbti_align} max={0.15} />
+          {(lastDecision.scores || []).sort((a, b) => b.total - a.total).map((c) => (
+            <div key={c.agentId} className={`ri-candidate ${c.agentId === lastDecision.chosenAgentId ? "chosen" : ""}`}>
+              <div className="ri-candidate-header">
+                <strong>{c.agentId}</strong>
+                <span className="ri-total">{c.total.toFixed(2)}</span>
               </div>
-            ))}
+              <ScoreBar label="目标" value={c.goal} max={Math.max(...(lastDecision.scores || []).map(x => x.goal), 0.01)} />
+              <ScoreBar label="情感" value={c.emotionFit} max={Math.max(...(lastDecision.scores || []).map(x => x.emotionFit), 0.01)} />
+              <ScoreBar label="冷却" value={c.cooldown} max={Math.max(...(lastDecision.scores || []).map(x => x.cooldown), 0.01)} />
+              <ScoreBar label="多样性" value={c.diversity} max={Math.max(...(lastDecision.scores || []).map(x => x.diversity), 0.01)} />
+              <ScoreBar label="MBTI" value={c.mbtiAlign} max={Math.max(...(lastDecision.scores || []).map(x => x.mbtiAlign), 0.01)} />
+            </div>
+          ))}
         </div>
       )}
 

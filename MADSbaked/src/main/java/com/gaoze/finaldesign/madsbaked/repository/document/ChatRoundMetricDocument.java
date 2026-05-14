@@ -27,6 +27,10 @@ public class ChatRoundMetricDocument {
     private Double finalScore;
     private String chosenSpeaker;
     private Double postMessageRating;
+    @org.springframework.data.mongodb.core.mapping.Field("agentScores")
+    private String agentScores;
+    private Boolean interventionRound;
+    private Integer interventionIndex;
 
     public ChatRoundMetricDocument() {
     }
@@ -114,4 +118,21 @@ public class ChatRoundMetricDocument {
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
     }
+
+    public Double getHeuristicTotal() { return heuristicTotal; }
+    public void setHeuristicTotal(Double heuristicTotal) { this.heuristicTotal = heuristicTotal; }
+    public Double getLlmTotal() { return llmTotal; }
+    public void setLlmTotal(Double llmTotal) { this.llmTotal = llmTotal; }
+    public Double getFinalScore() { return finalScore; }
+    public void setFinalScore(Double finalScore) { this.finalScore = finalScore; }
+    public String getChosenSpeaker() { return chosenSpeaker; }
+    public void setChosenSpeaker(String chosenSpeaker) { this.chosenSpeaker = chosenSpeaker; }
+    public Double getPostMessageRating() { return postMessageRating; }
+    public void setPostMessageRating(Double postMessageRating) { this.postMessageRating = postMessageRating; }
+    public String getAgentScores() { return agentScores; }
+    public void setAgentScores(String agentScores) { this.agentScores = agentScores; }
+    public Boolean getInterventionRound() { return interventionRound; }
+    public void setInterventionRound(Boolean interventionRound) { this.interventionRound = interventionRound; }
+    public Integer getInterventionIndex() { return interventionIndex; }
+    public void setInterventionIndex(Integer interventionIndex) { this.interventionIndex = interventionIndex; }
 }

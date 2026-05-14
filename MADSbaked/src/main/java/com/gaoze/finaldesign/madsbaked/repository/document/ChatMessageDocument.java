@@ -105,4 +105,17 @@ public class ChatMessageDocument {
     public void setFromUser(boolean fromUser) {
         this.fromUser = fromUser;
     }
+
+    public Integer getRating() { return rating; }
+    public void setRating(Integer rating) { this.rating = rating; }
+    public String getFeedbackTag() { return feedbackTag; }
+    public void setFeedbackTag(String feedbackTag) { this.feedbackTag = feedbackTag; }
+    public Integer getTurn() { return turn; }
+    public void setTurn(Integer turn) { this.turn = turn; }
+    public Integer getLatencyMs() { return latencyMs; }
+    public void setLatencyMs(Integer latencyMs) { this.latencyMs = latencyMs; }
+    public Double getTemperature() { return temperature; }
+    public void setTemperature(Double temperature) { this.temperature = temperature; }
+    public Boolean getFallback() { return fallback; }
+    public void setFallback(Boolean fallback) { this.fallback = fallback; }
 }

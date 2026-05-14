@@ -28,6 +28,8 @@ public class ChatSessionDocument {
     private Long ownerUserId;
     private Instant interventionAt;
     private String interventionMessageId;
+    private Integer interventionIndex;
+    private String sessionType;
     private String evaluationComment;
     private Integer manualRating;
     private Integer aiRating;
@@ -167,4 +169,8 @@ public class ChatSessionDocument {
     public void setAiRatingRationale(String aiRatingRationale) {
         this.aiRatingRationale = aiRatingRationale;
     }
+    public Integer getInterventionIndex() { return interventionIndex; }
+    public void setInterventionIndex(Integer interventionIndex) { this.interventionIndex = interventionIndex; }
+    public String getSessionType() { return sessionType; }
+    public void setSessionType(String sessionType) { this.sessionType = sessionType; }
 }

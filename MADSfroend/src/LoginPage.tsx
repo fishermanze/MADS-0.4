@@ -1,6 +1,6 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type React from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { authApi } from "./api/authApi";
 import { AuthShellAside, IconLock, IconUser } from "./components/AuthShellVisuals";
 import { useAuth } from "./context/AuthContext";
 import "./auth-shell.css";
@@ -20,7 +20,7 @@ export default function LoginPage() {
     }
   }, [user, navigate]);
 
-  const onSubmit = async (e: FormEvent) => {
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErr("");
     if (!username.trim() || !password) {

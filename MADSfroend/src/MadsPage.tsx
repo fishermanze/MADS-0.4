@@ -5,8 +5,7 @@ import type { ChatMessage, GroupedHistories, HistoryItem, MbtiType, ModelConfig,
 import SessionSidebar from "./components/SessionSidebar";
 import MessageBubble from "./components/MessageBubble";
 import ModelConfigModal from "./components/ModelConfigModal";
-import InterventionModal from "./components/InterventionModal";
-import personacreator from "./components/PersonaCreator";
+import PersonaCreator from "./components/PersonaCreator";
 import RouterInspector from "./components/RouterInspector";
 
 const EMPTY_GROUP: GroupedHistories = {
@@ -52,12 +51,6 @@ function updateMbtiDimension(mbti: MbtiType, index: number, value: string): Mbti
   return chars.join("") as MbtiType;
 }
 
-function toMillis(value: string | null | undefined): number {
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
 type StreamingMessage = { speaker: string; roleTag: string; content: string; done: boolean };
 
 function MadsPage() {
@@ -80,9 +73,6 @@ function MadsPage() {
   const [userInput, setUserInput] = useState("");
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
   const [personaTemplates, setPersonaTemplates] = useState<PersonaTemplate[]>([]);
-  const [showIntervention, setShowIntervention] = useState(false);
-  const [interventionModels, setInterventionModels] = useState<ModelConfig[]>([]);
-  const [selectedInterventionMessageId, setSelectedInterventionMessageId] = useState("");
   const [showPersonaCreator, setShowPersonaCreator] = useState(false);
   const [newPersonaName, setNewPersonaName] = useState("");
   const [newPersonaRoleHint, setNewPersonaRoleHint] = useState("");
@@ -93,7 +83,7 @@ function MadsPage() {
   const autoRoundPendingResolveRef = useRef<(() => void) | null>(null);
   const [streamingMessages, setStreamingMessages] = useState<StreamingMessage[]>([]);
   const [isStreamingRound, setIsStreamingRound] = useState(false);
-  const [routerDecisions, setRouterDecisions] = useState<Array<{ chosen_agent_id: string; strategy: string; reason: string; candidates: Array<{ agent_id: string; score: number; goal: number; emotion_fit: number; cooldown: number; diversity: number; mbti_align: number }> }>>([]);
+  const [routerDecisions, setRouterDecisions] = useState<Array<{ chosenAgentId: string; chosenRole: string; strategy: string; turn: number; scores: Array<{ agentId: string; total: number; goal: number; emotionFit: number; cooldown: number; diversity: number; mbtiAlign: number }>; convergence: number; shouldStop: boolean; stopReason: string }>>([]);
   const [convergenceHistory, setConvergenceHistory] = useState<Array<{ turn: number; score: number; shouldStop: boolean; reason: string; threshold: number }>>([]);
   const [showInspector, setShowInspector] = useState(true);
 
@@ -102,7 +92,7 @@ function MadsPage() {
     try {
       const result = normalizeGroupedHistories(await chatApi.getGroupedHistories(keyword?.trim()));
       setHistories(result);
-      if (activeHistoryId && !Object.values(result).some(arr => arr.some(item => item.id === activeHistoryId))) {
+      if (activeHistoryId && !Object.values(result).some(arr => (arr as HistoryItem[]).some(item => item.id === activeHistoryId))) {
         setActiveHistoryId(null);
         setMessages([]);
       }
@@ -134,8 +124,6 @@ function MadsPage() {
     try {
       const meta = await chatApi.getSessionMeta(sessionId);
       setSessionMeta(meta);
-      setInterventionModels(meta.models ?? []);
-      setSelectedInterventionMessageId(meta.interventionMessageId ?? "");
       return meta;
     } catch (error) {
       console.error("加载会话元信息失败", error);
@@ -164,8 +152,6 @@ function MadsPage() {
     }
     setStreamingMessages([]);
     setIsStreamingRound(false);
-    setRouterDecisions([]);
-    setConvergenceHistory([]);
   }, []);
 
   const closeActiveStream = useCallback(() => {
@@ -209,7 +195,7 @@ function MadsPage() {
               if (prev.length === 0) return prev;
               if (skipped) return prev.slice(0, -1);
               const updated = [...prev];
-              updated[updated.length - 1] = { ...updated[updated.length - 1], done: true };
+              updated[updated.length - 1] = { ...updated[updated.length - 1], content, done: true };
               return updated;
             });
           } catch { /* ignore */ }
@@ -400,36 +386,12 @@ function MadsPage() {
         setActiveHistoryId(null);
         setMessages([]);
         setSessionMeta(null);
-        setSelectedInterventionMessageId("");
       }
       setShowDeleteId(null);
       await loadHistories(searchKeyword);
     } catch (error) {
       console.error("删除失败", error);
     }
-  };
-
-  const onApplyIntervention = async () => {
-    if (!activeHistoryId || !selectedInterventionMessageId) {
-      alert("请先选择一句已保存的对话作为干预位置。");
-      return;
-    }
-    try {
-      const nextMeta = await chatApi.applyIntervention(activeHistoryId, interventionModels, selectedInterventionMessageId);
-      setSessionMeta(nextMeta);
-      setShowIntervention(false);
-    } catch (error) {
-      console.error("干预更新失败", error);
-      alert("干预更新失败");
-    }
-  };
-
-  const onOpenIntervention = () => {
-    setInterventionModels(sessionMeta?.models ?? interventionModels);
-    setSelectedInterventionMessageId(
-      sessionMeta?.interventionMessageId ?? interventionCandidateMessages[interventionCandidateMessages.length - 1]?.id ?? "",
-    );
-    setShowIntervention(true);
   };
 
   const applyPersonaTemplateToModel = (modelId: string, personaId: string) => {
@@ -458,34 +420,6 @@ function MadsPage() {
       alert("创建人格模板失败。");
     }
   };
-
-  const interventionCandidateMessages = useMemo(() => {
-    if (!sessionMeta?.interventionAt) return messages;
-    if (sessionMeta.interventionMessageId) {
-      const anchorIdx = messages.findIndex((m) => m.id === sessionMeta.interventionMessageId);
-      if (anchorIdx >= 0) return messages.slice(0, anchorIdx + 1);
-    }
-    const interventionAtMs = toMillis(sessionMeta.interventionAt);
-    return messages.filter((msg) => toMillis(msg.createdAt) < interventionAtMs);
-  }, [messages, sessionMeta?.interventionAt, sessionMeta?.interventionMessageId]);
-
-  const interventionAnchorIndex = useMemo(() => {
-    if (!sessionMeta?.interventionAt) return -1;
-    if (sessionMeta.interventionMessageId) {
-      const idx = messages.findIndex((m) => m.id === sessionMeta.interventionMessageId);
-      if (idx >= 0) return idx;
-    }
-    const interventionAtMs = toMillis(sessionMeta.interventionAt);
-    let lastIdx = -1;
-    messages.forEach((m, i) => { if (toMillis(m.createdAt) < interventionAtMs) lastIdx = i; });
-    return lastIdx;
-  }, [messages, sessionMeta?.interventionAt, sessionMeta?.interventionMessageId]);
-
-  const interventionAnchorLabel = useMemo(() => {
-    if (!sessionMeta?.interventionAt) return "";
-    try { return new Date(sessionMeta.interventionAt).toLocaleString(); }
-    catch { return sessionMeta.interventionAt; }
-  }, [sessionMeta?.interventionAt]);
 
   const activeHistory = useMemo(() => {
     if (!activeHistoryId) return null;
@@ -537,10 +471,25 @@ function MadsPage() {
                 ) : (
                   <button className="primary-btn" onClick={() => void onResume()}>继续</button>
                 )}
-                <button className="ghost-btn" disabled={!sessionMeta?.paused} onClick={onOpenIntervention}>干预</button>
                 <button className="ghost-btn" onClick={() => setShowInspector((v) => !v)} title="路由器监控面板">
                   {showInspector ? "隐藏路由" : "路由"}
                 </button>
+                {sessionMeta?.paused && (
+                  <button className="ghost-btn" onClick={async () => {
+                    if (!activeHistoryId || !sessionMeta) return;
+                    setMessages([]); setStreamingMessages([]); setRouterDecisions([]); setConvergenceHistory([]);
+                    const history = await chatApi.createSession({
+                      topic: activeHistory?.title ?? "重新生成",
+                      scenario: sessionMeta.scenario,
+                      models: sessionMeta.models,
+                    });
+                    await loadHistories(searchKeyword);
+                    setActiveHistoryId(history.id);
+                    setTimeout(() => callAutoRound(history.id), 200);
+                  }} title="新建会话并重新生成">
+                    重新生成
+                  </button>
+                )}
               </div>
             </div>
             <div className="message-flow message-flow-single">
@@ -552,8 +501,6 @@ function MadsPage() {
                     <MessageBubble
                       key={message.id}
                       message={message}
-                      isInterventionAnchor={index === interventionAnchorIndex}
-                      interventionAnchorLabel={interventionAnchorLabel}
                       showFeedback={true}
                       onFeedback={(msgId, rating) => {
                         if (activeHistoryId) {
@@ -609,18 +556,6 @@ function MadsPage() {
         onCreateSession={() => void onCreateSession()}
         onClose={() => setShowCreateModal(false)}
         onOpenPersonaCreator={() => setShowPersonaCreator(true)}
-      />
-
-      <InterventionModal
-        open={showIntervention}
-        models={interventionModels}
-        personaTemplates={personaTemplates}
-        candidateMessages={interventionCandidateMessages}
-        selectedMessageId={selectedInterventionMessageId}
-        onModelsChange={setInterventionModels}
-        onSelectedMessageChange={setSelectedInterventionMessageId}
-        onApply={() => void onApplyIntervention()}
-        onClose={() => setShowIntervention(false)}
       />
 
       <PersonaCreator

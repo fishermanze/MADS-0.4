@@ -12,7 +12,7 @@ interface FeatureCard {
 const FEATURES: FeatureCard[] = [
   {
     icon: "💬",
-    title: "多智能体对话",
+    title: "多Agent对话",
     desc: "家庭与学校场景下的多角色实时对话，支持 MBTI 人格画像与流式生成。",
     to: "/MADS",
   },

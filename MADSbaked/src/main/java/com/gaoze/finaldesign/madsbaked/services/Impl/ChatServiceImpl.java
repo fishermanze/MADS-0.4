@@ -5,14 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gaoze.finaldesign.madsbaked.repository.ChatMessageRepository;
 import com.gaoze.finaldesign.madsbaked.repository.ChatRoundMetricRepository;
 import com.gaoze.finaldesign.madsbaked.repository.ChatSessionRepository;
+import com.gaoze.finaldesign.madsbaked.repository.OpinionSnapshotRepository;
 import com.gaoze.finaldesign.madsbaked.repository.document.ChatMessageDocument;
 import com.gaoze.finaldesign.madsbaked.repository.document.ChatRoundMetricDocument;
 import com.gaoze.finaldesign.madsbaked.repository.document.ChatSessionDocument;
+import com.gaoze.finaldesign.madsbaked.repository.document.OpinionSnapshotDocument;
 import com.gaoze.finaldesign.madsbaked.services.ChatServices;
 import com.gaoze.finaldesign.madsbaked.services.integration.PythonAutogenGatewayClient;
 import com.gaoze.finaldesign.madsbaked.web.dto.ChatMessageResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.ChatMetricsResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.ChatMetricsTrendPoint;
+import com.gaoze.finaldesign.madsbaked.web.dto.RouterRoundDetail;
 import com.gaoze.finaldesign.madsbaked.web.dto.CreateSessionRequest;
 import com.gaoze.finaldesign.madsbaked.web.dto.GroupedHistoryResponse;
 import com.gaoze.finaldesign.madsbaked.web.dto.HistoryItemResponse;
@@ -50,6 +53,7 @@ public class ChatServiceImpl implements ChatServices {
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatRoundMetricRepository chatRoundMetricRepository;
+    private final OpinionSnapshotRepository opinionSnapshotRepository;
     private final PythonAutogenGatewayClient autogenGatewayClient;
     private final ObjectMapper objectMapper;
     private final ConcurrentMap<String, Sinks.Empty<Void>> activeStreamCancels = new ConcurrentHashMap<>();
@@ -80,12 +84,14 @@ public class ChatServiceImpl implements ChatServices {
             ChatSessionRepository chatSessionRepository,
             ChatMessageRepository chatMessageRepository,
             ChatRoundMetricRepository chatRoundMetricRepository,
+            OpinionSnapshotRepository opinionSnapshotRepository,
             PythonAutogenGatewayClient autogenGatewayClient,
             ObjectMapper objectMapper
     ) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.chatRoundMetricRepository = chatRoundMetricRepository;
+        this.opinionSnapshotRepository = opinionSnapshotRepository;
         this.autogenGatewayClient = autogenGatewayClient;
         this.objectMapper = objectMapper;
     }
@@ -117,6 +123,9 @@ public class ChatServiceImpl implements ChatServices {
 
         LocalDate now = LocalDate.now();
         for (ChatSessionDocument session : all) {
+            if ("compare".equals(session.getSessionType())) {
+                continue;
+            }
             HistoryItemResponse item = toHistoryItem(session);
             long days = ChronoUnit.DAYS.between(
                     session.getUpdatedAt().atZone(ZoneId.systemDefault()).toLocalDate(),
@@ -157,6 +166,8 @@ public class ChatServiceImpl implements ChatServices {
                 null
         );
         state.setOwnerUserId(userId);
+        String sessionType = request.sessionType() == null || request.sessionType().isBlank() ? null : request.sessionType().trim();
+        state.setSessionType(sessionType);
         return chatSessionRepository.save(state)
                 .map(ChatServiceImpl::toHistoryItem);
     }
@@ -225,9 +236,12 @@ public class ChatServiceImpl implements ChatServices {
                             session.setInterventionMessageId(interventionMessageId == null || interventionMessageId.isBlank()
                                     ? null
                                     : interventionMessageId.trim());
+                            int idx = session.getInterventionIndex() == null ? 1 : session.getInterventionIndex() + 1;
+                            session.setInterventionIndex(idx);
                             Instant now = Instant.now();
                             session.setInterventionAt(now);
                             session.setUpdatedAt(now);
+                            session.setPaused(false);
                             return chatSessionRepository.save(session);
                         }))
                 .map(ChatServiceImpl::toSessionMeta);
@@ -241,6 +255,16 @@ public class ChatServiceImpl implements ChatServices {
 
     @Override
     public Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, long userId, boolean admin) {
+        return triggerAutoRoundStream(sessionId, content, null, userId, admin);
+    }
+
+    @Override
+    public Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, String strategy, long userId, boolean admin) {
+        return triggerAutoRoundStream(sessionId, content, strategy, null, userId, admin);
+    }
+
+    @Override
+    public Flux<ServerSentEvent<String>> triggerAutoRoundStream(String sessionId, String content, String strategy, Integer maxRounds, long userId, boolean admin) {
         return loadOwnedSession(sessionId, userId, admin)
                 .flatMapMany(session -> {
                     Sinks.Empty<Void> cancelSignal = Sinks.empty();
@@ -261,7 +285,9 @@ public class ChatServiceImpl implements ChatServices {
                                             session.getTitle(),
                                             session.getScenario(),
                                             safeModels(session.getModels()),
-                                            context
+                                            context,
+                                            strategy,
+                                            maxRounds
                                     )
                                     .takeUntilOther(cancelSignal.asMono())
                                     .concatMap(event -> handleStreamEvent(session, event)))
@@ -293,7 +319,8 @@ public class ChatServiceImpl implements ChatServices {
             if (parsedDone.routerMeta() != null) {
                 log.info("router-meta (stream) session={} meta={}", session.getId(), parsedDone.routerMeta());
             }
-            return persistRouterMetric(session.getId(), "stream", parsedDone.routerMeta())
+            return persistRouterMetric(session, "stream", parsedDone.routerMeta())
+                    .then(persistOpinionSnapshots(session, parsedDone.routerMeta()))
                     .then(markPausedIfDialogConverged(session, parsedDone.routerMeta()))
                     .then(messagesForSession(session.getId()))
                     .flatMapMany(messages -> Flux.just(ServerSentEvent.<String>builder()
@@ -445,6 +472,30 @@ public class ChatServiceImpl implements ChatServices {
                                             trend
                                     );
                                 }));
+    }
+
+    @Override
+    public Flux<RouterRoundDetail> getRouterRoundDetails(String sessionId, long userId, boolean admin) {
+        return loadOwnedSession(sessionId, userId, admin)
+                .thenMany(chatRoundMetricRepository.findBySessionIdOrderByCreatedAtAsc(sessionId))
+                .map(metric -> new RouterRoundDetail(
+                        metric.getId(),
+                        metric.getSessionId(),
+                        metric.getMode(),
+                        metric.getRouterConfigured(),
+                        metric.getRouterAttempted(),
+                        metric.getRouterApplied(),
+                        metric.getReason(),
+                        metric.getChosenSpeaker(),
+                        metric.getHeuristicTotal(),
+                        metric.getLlmTotal(),
+                        metric.getFinalScore(),
+                        metric.getPostMessageRating(),
+                        metric.getAgentScores(),
+                        metric.getInterventionRound(),
+                        metric.getInterventionIndex(),
+                        metric.getCreatedAt() == null ? null : metric.getCreatedAt().toString()
+                ));
     }
 
     @Override
@@ -658,36 +709,109 @@ public class ChatServiceImpl implements ChatServices {
         return null;
     }
 
-    private Mono<Void> persistRouterMetric(String sessionId, String mode, java.util.Map<String, Object> routerMeta) {
+    private Mono<Void> persistRouterMetric(ChatSessionDocument session, String mode, java.util.Map<String, Object> routerMeta) {
         if (routerMeta == null) {
             return Mono.empty();
         }
-        ChatRoundMetricDocument metric = new ChatRoundMetricDocument(
-                UUID.randomUUID().toString(),
-                sessionId,
-                mode,
-                asBoolean(routerMeta.get("configured")),
-                asBoolean(routerMeta.get("attempted")),
-                asBoolean(routerMeta.get("applied")),
-                asText(routerMeta.get("reason")),
-                Instant.now()
-        );
+        boolean isIntervention = session.getInterventionAt() != null;
+        Integer interventionIdx = session.getInterventionIndex();
 
         Object dialogRouter = routerMeta.get("dialogRouter");
-        if (dialogRouter instanceof java.util.Map<?, ?> dr) {
-            metric.setFinalScore(asDouble(dr.get("convergenceThreshold")));
-            metric.setChosenSpeaker(asText(dr.get("stopReason")));
-        }
 
         Object routeDecisions = routerMeta.get("routeDecisions");
-        if (routeDecisions instanceof java.util.List<?> list && !list.isEmpty()) {
-            Object last = list.get(list.size() - 1);
-            if (last instanceof java.util.Map<?, ?> lastMap) {
-                metric.setChosenSpeaker(asText(lastMap.get("role")));
+        java.util.List<java.util.Map<String, Object>> decisionList = new java.util.ArrayList<>();
+        if (routeDecisions instanceof java.util.List<?> list) {
+            for (Object item : list) {
+                if (item instanceof java.util.Map<?, ?> m) {
+                    java.util.Map<String, Object> entry = new java.util.HashMap<>();
+                    m.forEach((k, v) -> entry.put(String.valueOf(k), v));
+                    decisionList.add(entry);
+                }
             }
         }
 
-        return chatRoundMetricRepository.save(metric).then();
+        if (decisionList.isEmpty()) {
+            ChatRoundMetricDocument metric = new ChatRoundMetricDocument(
+                    UUID.randomUUID().toString(), session.getId(), mode,
+                    asBoolean(routerMeta.get("configured")),
+                    asBoolean(routerMeta.get("attempted")),
+                    asBoolean(routerMeta.get("applied")),
+                    asText(routerMeta.get("reason")),
+                    Instant.now()
+            );
+            metric.setInterventionRound(isIntervention);
+            metric.setInterventionIndex(interventionIdx);
+            return chatRoundMetricRepository.save(metric).then();
+        }
+
+        java.util.List<Mono<Void>> saves = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> decision : decisionList) {
+            String roundMode = asText(decision.get("schedulerStrategy"));
+            if (roundMode == null || roundMode.isEmpty()) roundMode = mode;
+            String speaker = asText(decision.get("chosenSpeaker"));
+            if (speaker == null) speaker = asText(decision.get("role"));
+
+            ChatRoundMetricDocument metric = new ChatRoundMetricDocument(
+                    UUID.randomUUID().toString(), session.getId(), roundMode,
+                    asBoolean(routerMeta.get("configured")),
+                    asBoolean(routerMeta.get("attempted")),
+                    asBoolean(routerMeta.get("applied")),
+                    asText(decision.get("choiceReason")),
+                    Instant.now()
+            );
+            metric.setInterventionRound(isIntervention);
+            metric.setInterventionIndex(interventionIdx);
+            metric.setChosenSpeaker(speaker);
+
+            Object scoresObj = decision.get("scores");
+            if (scoresObj instanceof java.util.Map<?, ?> scoresMap) {
+                double maxTotal = 0;
+                for (Object sv : scoresMap.values()) {
+                    if (sv instanceof java.util.Map<?, ?> sc) {
+                        double t = asDouble(sc.get("total"));
+                        if (t > maxTotal) maxTotal = t;
+                    }
+                }
+                metric.setFinalScore(maxTotal);
+                if (speaker != null && scoresMap.get(speaker) instanceof java.util.Map<?, ?> chosenScores) {
+                    metric.setHeuristicTotal(asDouble(chosenScores.get("goal")));
+                    metric.setLlmTotal(asDouble(chosenScores.get("emotion_fit")));
+                }
+                try {
+                    metric.setAgentScores(objectMapper.writeValueAsString(scoresMap));
+                } catch (Exception ignored) {}
+            }
+
+            saves.add(chatRoundMetricRepository.save(metric).then());
+        }
+        if (saves.isEmpty()) return Mono.empty();
+        return Flux.concat(saves).then();
+    }
+
+    private Mono<Void> persistOpinionSnapshots(ChatSessionDocument session, java.util.Map<String, Object> routerMeta) {
+        if (routerMeta == null) return Mono.empty();
+        Object snapshotsObj = routerMeta.get("opinionSnapshots");
+        if (!(snapshotsObj instanceof java.util.List<?> list) || list.isEmpty()) return Mono.empty();
+
+        java.util.List<Mono<OpinionSnapshotDocument>> saves = new java.util.ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof java.util.Map<?, ?> map)) continue;
+            OpinionSnapshotDocument doc = new OpinionSnapshotDocument();
+            doc.setId(UUID.randomUUID().toString());
+            doc.setSessionId(session.getId());
+            Object turnObj = map.get("turn");
+            doc.setTurn(turnObj instanceof Number ? ((Number) turnObj).intValue() : 0);
+            doc.setAgentOpinions(map.get("agentOpinions") instanceof String s ? s : "{}");
+            doc.setPairwiseDistances(map.get("pairwiseDistances") instanceof String s ? s : "{}");
+            Object avgObj = map.get("avgDistance");
+            doc.setAvgDistance(avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null);
+            Object stableObj = map.get("allStable");
+            doc.setAllStable(stableObj instanceof Boolean ? (Boolean) stableObj : null);
+            doc.setCreatedAt(Instant.now());
+            saves.add(opinionSnapshotRepository.save(doc));
+        }
+        if (saves.isEmpty()) return Mono.empty();
+        return Flux.concat(saves).then();
     }
 
     private String toJson(List<ChatMessageResponse> messages) {
@@ -786,7 +910,7 @@ public class ChatServiceImpl implements ChatServices {
                                     false
                             ))
                             .collect(Collectors.toList());
-                    return persistRouterMetric(session.getId(), "blocking", result.routerMeta())
+                    return persistRouterMetric(session, "blocking", result.routerMeta())
                             .thenMany(chatMessageRepository.saveAll(aiMessages))
                             .then()
                             .then(Mono.defer(() -> {

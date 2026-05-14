@@ -11,8 +11,6 @@ interface StreamingMessage {
 interface MessageBubbleProps {
   message: ChatMessage;
   streaming?: StreamingMessage;
-  isInterventionAnchor: boolean;
-  interventionAnchorLabel: string;
   onFeedback?: (messageId: string, rating: number) => void;
   showFeedback?: boolean;
 }
@@ -35,7 +33,7 @@ function TypewriterText({ text }: { text: string }) {
   return <>{text.slice(0, visibleLength)}</>;
 }
 
-function MessageBubble({ message, streaming, isInterventionAnchor, interventionAnchorLabel, onFeedback, showFeedback }: MessageBubbleProps) {
+function MessageBubble({ message, streaming, onFeedback, showFeedback }: MessageBubbleProps) {
   return (
     <div key={message.id}>
       <div className={message.fromUser ? "message-row user" : "message-row"}>
@@ -62,13 +60,6 @@ function MessageBubble({ message, streaming, isInterventionAnchor, interventionA
             {!streaming.done && <span className="streaming-indicator">生成中...</span>}
           </div>
           <div className="message-content">{streaming.content || "\u00A0"}</div>
-        </div>
-      )}
-      {isInterventionAnchor && (
-        <div className="intervention-divider">
-          <span className="intervention-divider-line" />
-          <span className="intervention-divider-label">干预于 {interventionAnchorLabel}</span>
-          <span className="intervention-divider-line" />
         </div>
       )}
     </div>

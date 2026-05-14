@@ -5,6 +5,7 @@ import java.util.List;
 public record CreateSessionRequest(
         String topic,
         String scenario,
-        List<ModelConfigDto> models
+        List<ModelConfigDto> models,
+        String sessionType
 ) {
 }

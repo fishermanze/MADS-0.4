@@ -24,7 +24,7 @@ function MainPage() {
               }
               to="/MADS"
             >
-              对话系统
+              多Agent对话
             </NavLink>
             <NavLink
               className={({ isActive }) =>
@@ -32,7 +32,23 @@ function MainPage() {
               }
               to="/INTERVENTION"
             >
-              干预实验
+              人格特质干预实验
+            </NavLink>
+            <NavLink
+              className={({ isActive }) =>
+                isActive ? "main-layout-link active" : "main-layout-link"
+              }
+              to="/ROUTER"
+            >
+              调度统计
+            </NavLink>
+            <NavLink
+              className={({ isActive }) =>
+                isActive ? "main-layout-link active" : "main-layout-link"
+              }
+              to="/COMPARE"
+            >
+              策略对比
             </NavLink>
             {isAdmin && (
               <NavLink
@@ -44,20 +60,12 @@ function MainPage() {
                 统计页面
               </NavLink>
             )}
-            <NavLink
-              className={({ isActive }) =>
-                isActive ? "main-layout-link active" : "main-layout-link"
-              }
-              to="/SETTINGS"
-            >
-              设置
-            </NavLink>
           </nav>
           <div className="main-layout-user">
             <button className="theme-toggle" onClick={toggleTheme} title="切换深色/浅色主题">
               {theme === "light" ? "🌙" : "☀️"}
             </button>
-            <span className="main-layout-username" title={user?.email ?? undefined}>
+            <span className="main-layout-username">
               {user?.username}
               <span className="main-layout-role">{isAdmin ? "管理员" : "用户"}</span>
             </span>

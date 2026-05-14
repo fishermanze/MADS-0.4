@@ -1,0 +1,21 @@
+{
+  "default_model_id": "qwen3-ISFJ",
+  "models": [
+    {"model_id":"qwen3-ISTJ","display_name":"qwen3-ISTJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ISTJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ISTJ"]},
+    {"model_id":"qwen3-ISFJ","display_name":"qwen3-ISFJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ISFJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ISFJ"]},
+    {"model_id":"qwen3-INFJ","display_name":"qwen3-INFJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"INFJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","INFJ"]},
+    {"model_id":"qwen3-INTJ","display_name":"qwen3-INTJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"INTJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","INTJ"]},
+    {"model_id":"qwen3-ISTP","display_name":"qwen3-ISTP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ISTP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ISTP"]},
+    {"model_id":"qwen3-ISFP","display_name":"qwen3-ISFP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ISFP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ISFP"]},
+    {"model_id":"qwen3-INFP","display_name":"qwen3-INFP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"INFP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","INFP"]},
+    {"model_id":"qwen3-INTP","display_name":"qwen3-INTP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"INTP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","INTP"]},
+    {"model_id":"qwen3-ESTP","display_name":"qwen3-ESTP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ESTP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ESTP"]},
+    {"model_id":"qwen3-ESFP","display_name":"qwen3-ESFP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ESFP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ESFP"]},
+    {"model_id":"qwen3-ENFP","display_name":"qwen3-ENFP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ENFP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ENFP"]},
+    {"model_id":"qwen3-ENTP","display_name":"qwen3-ENTP","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ENTP","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ENTP"]},
+    {"model_id":"qwen3-ESTJ","display_name":"qwen3-ESTJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ESTJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ESTJ"]},
+    {"model_id":"qwen3-ESFJ","display_name":"qwen3-ESFJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ESFJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ESFJ"]},
+    {"model_id":"qwen3-ENFJ","display_name":"qwen3-ENFJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ENFJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ENFJ"]},
+    {"model_id":"qwen3-ENTJ","display_name":"qwen3-ENTJ","endpoint":"http://127.0.0.1:8002/v1","api_key":"EMPTY","base_model":"qwen3","lora_name":"ENTJ","model":"qwen3","status":"ready","priority":70,"tags":["qwen","ENTJ"]}
+  ]
+}

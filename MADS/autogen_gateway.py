@@ -27,13 +27,33 @@ from dialog_router import (
     KnowledgeShardModerator,
 )
 
+from consensus_scheduler import (
+    ConsensusScheduler,
+    dispatch_consensus_round,
+    compute_divergence,
+)
+
 from sentiment_analyzer import score_sentiment
 
-logging.basicConfig(
-    format="%(asctime)s [%(trace_id)s] %(levelname)s %(name)s %(message)s",
-    level=logging.INFO,
-)
 logger = logging.getLogger("mads_gateway")
+
+
+class TraceIdFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "trace_id"):
+            record.trace_id = "-"
+        return super().format(record)
+
+
+handler = logging.StreamHandler()
+handler.setFormatter(TraceIdFormatter("%(asctime)s [%(trace_id)s] %(levelname)s %(name)s %(message)s"))
+logging.root.handlers.clear()
+logging.root.addHandler(handler)
+logging.root.setLevel(logging.INFO)
+
+app = FastAPI(title="MADS AutoGen Gateway", version="0.3.0")
+_CLIENT_CACHE: TTLCache = TTLCache(maxsize=64, ttl=600)
+_REGISTRY_CACHE: Dict[str, Any] = {"loaded_at": 0.0, "data": {}}
 
 
 class ModelConfig(BaseModel):
@@ -54,9 +74,9 @@ class ChatGenerateRequest(BaseModel):
     models: List[ModelConfig] = Field(default_factory=list)
     maxRounds: int = Field(default=1, ge=1, le=50)
     routerEnabled: bool = True
-    routerStrategy: str = Field(default="none")  # none | heuristic | llm | hybrid | random | round_robin
+    routerStrategy: str = Field(default="none")
     convergenceThreshold: float | None = Field(default=None)
-    routerWeights: Dict[str, float] | None = Field(default=None)  # {goal, emotion_fit, cooldown, diversity, mbti_align}
+    routerWeights: Dict[str, float] | None = Field(default=None)
     knowledgeBase: str | None = Field(default=None)
     seed: int | None = Field(default=None)
     temperature: float | None = Field(default=None)
@@ -70,26 +90,12 @@ class ReplyItem(BaseModel):
     model: str = ""
     latencyMs: int = 0
     fallback: bool = False
+    temperature: float = 0.0
 
 
 class ChatGenerateResponse(BaseModel):
     replies: List[ReplyItem]
     routerMeta: Dict[str, Any] | None = None
-
-
-app = FastAPI(title="MADS AutoGen Gateway", version="0.3.0")
-_CLIENT_CACHE: TTLCache = TTLCache(maxsize=64, ttl=600)
-_REGISTRY_CACHE: Dict[str, Any] = {"loaded_at": 0.0, "data": {}}
-
-
-class TraceIdFilter(logging.Filter):
-    def filter(self, record):
-        if not hasattr(record, "trace_id"):
-            record.trace_id = "-"
-        return True
-
-
-logger.addFilter(TraceIdFilter())
 
 
 @app.middleware("http")
@@ -309,7 +315,7 @@ def _default_route(model_name: str) -> Dict[str, str]:
     if normalized_model == "qwen":
         model = os.getenv("MADS_QWEN_OPENAI_MODEL", model_name).strip() or model_name
         return {
-            "base_url": _normalize_openai_base(os.getenv("MADS_QWEN_OPENAI_BASE", "http://127.0.0.1:8001/v1").strip()),
+            "base_url": _normalize_openai_base(os.getenv("MADS_QWEN_OPENAI_BASE", "http://127.0.0.1:8002/v1").strip()),
             "api_key": os.getenv("MADS_QWEN_OPENAI_KEY", default_api_key).strip() or default_api_key,
             "model": model,
             "base_model": os.getenv("MADS_QWEN_BASE_MODEL", model).strip() or model,
@@ -391,7 +397,7 @@ def _create_model_client(route: Dict[str, str]) -> OpenAIChatCompletionClient:
     print(
         f"[llm-route] create_client base_url={route.get('base_url', '')} "
         f"base_model={route.get('base_model', '')} lora={route.get('lora_name', '')} "
-        f"runtime_model={runtime_model} max_tokens={route.get('max_tokens') or _env_int_safe('MADS_AGENT_MAX_TOKENS', 180)}",
+        f"runtime_model={runtime_model} max_tokens={route.get('max_tokens') or _env_int_safe('MADS_AGENT_MAX_TOKENS', 1024)}",
         flush=True,
     )
     common_args = {
@@ -407,7 +413,7 @@ def _create_model_client(route: Dict[str, str]) -> OpenAIChatCompletionClient:
             structured_output=True,
         ),
     }
-    max_tokens = int(route.get("max_tokens") or _env_int_safe("MADS_AGENT_MAX_TOKENS", 180))
+    max_tokens = int(route.get("max_tokens") or _env_int_safe("MADS_AGENT_MAX_TOKENS", 1024))
     try:
         return OpenAIChatCompletionClient(**common_args, max_tokens=max_tokens)
     except TypeError:
@@ -681,9 +687,14 @@ def _sanitize_dialogue_output(
     if not cleaned:
         return ""
 
-    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
-    cleaned = cleaned.replace("://", "").strip()
+    # Clean think/reasoning tags (Qwen3: <think>...</think>, <\think>...{://}, <｜end▁of▁thinking｜>, etc.)
+    cleaned = re.sub(r"</?\\?think>[\s\S]*?</think>", "", cleaned, flags=re.IGNORECASE)
+    stripped_starts = ("", "", "://")
+    for tag in stripped_starts:
+        if cleaned.startswith(tag):
+            cleaned = cleaned[len(tag):]
+    cleaned = cleaned.replace("<think>", "").replace("</think>", "").replace("<\\think>", "").replace("response",
+                                                                                                          "").strip()
 
     prompt_markers = (
         "\nHuman:", "\nUser:", "\nSystem:", "\nAssistant:",
@@ -941,6 +952,7 @@ async def autogen_generate(request: ChatGenerateRequest) -> tuple[List[ReplyItem
         and not os.getenv("MADS_REMOTE_OPENAI_BASE", "").strip()
         and not _registry_ready_models(registry)
     ):
+        print("[WARN] 未配置任何 LLM 后端 (registry/ROUTES/REMOTE_OPENAI_BASE 均为空), 将返回本地 fallback 回复", flush=True)
         return local_fallback_reply(request), {"configured": False, "attempted": False, "applied": False, "reason": "llm_route_not_configured"}
 
     routed_models, router_meta = await _maybe_apply_router_decision(request, request.models)
@@ -1011,6 +1023,7 @@ async def autogen_generate(request: ChatGenerateRequest) -> tuple[List[ReplyItem
                 )
                 started = time.perf_counter()
                 try:
+                    print(f"[llm-call] → {route.get('base_url','')} model={_route_runtime_model(route, cfg.modelName)} agent={cfg.role or cfg.modelName}", flush=True)
                     result = await assistant.run(task=round_context)
                     content = _sanitize_dialogue_output(
                         _extract_agentchat_content(result),
@@ -1151,7 +1164,7 @@ async def _yield_stream_control() -> None:
 def _is_router_enabled(request: ChatGenerateRequest) -> bool:
     """请求级 routerStrategy 优先, 否则看 env 默认开关。"""
     strat = (request.routerStrategy or "none").strip().lower()
-    if strat in ("heuristic", "llm", "hybrid"):
+    if strat in ("heuristic", "llm", "hybrid", "consensus"):
         return True
     if strat == "none":
         return False
@@ -1359,9 +1372,18 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
     route_debug: List[Dict[str, Any]] = []
     round_context = request.userMessage.strip()
     final_stop_reason = "max_rounds_reached"
+    consensus_scheduler = None
 
     for turn in range(1, request.maxRounds + 1):
-        decision = dispatch_round(candidates, state, turn, router_cfg)
+        if router_cfg.strategy == "consensus":
+            decision, consensus_scheduler = dispatch_consensus_round(
+                candidates, state, router_cfg, consensus_scheduler
+            )
+            should_stop, stop_reason = consensus_scheduler.should_terminate()
+            if should_stop:
+                final_stop_reason = stop_reason
+        else:
+            decision = dispatch_round(candidates, state, turn, router_cfg)
         _log_router_decision(decision)
         chosen_cfg = cfg_by_id.get(decision.chosen_agent_id)
         if not chosen_cfg:
@@ -1408,6 +1430,17 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
             "valence": sentiment["valence"],
             "arousal": sentiment["arousal"],
         }, ensure_ascii=False))
+
+        if consensus_scheduler:
+            consensus_scheduler.post_utterance_update(decision.chosen_agent_id, captured_reply.content)
+            should_stop, stop_reason = consensus_scheduler.should_terminate()
+            conv_score = consensus_scheduler.consensus.stable_rounds / max(consensus_scheduler.beta, 1)
+            consensus_metrics = consensus_scheduler.get_metrics()
+        else:
+            should_stop = False
+            conv_score = 0.0
+            consensus_metrics = {}
+
         conv = evaluate_convergence(
             state=state,
             last_reply=captured_reply.content,
@@ -1416,6 +1449,9 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
             threshold=router_cfg.convergence_threshold,
             consecutive_required=router_cfg.consecutive_required,
         )
+        if should_stop:
+            conv.should_stop = True
+            conv.reason = stop_reason
         _log_convergence(turn, conv.score, router_cfg.convergence_threshold, conv.should_stop, conv.reason)
         yield _sse("convergence", json.dumps({
             "turn": turn,
@@ -1437,17 +1473,18 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
             "latencyMs": captured_reply.latencyMs,
             "schedulerStrategy": decision.strategy,
             "scores": {
-                c.agent_id: {
-                    "total": round(c.breakdown.total, 4),
-                    "goal": round(c.breakdown.goal, 4),
-                    "emotion_fit": round(c.breakdown.emotion_fit, 4),
-                    "cooldown": round(c.breakdown.cooldown, 4),
-                    "diversity": round(c.breakdown.diversity, 4),
-                    "mbti_align": round(c.breakdown.mbti_align, 4),
-                } for c in decision.candidates
+                agent_id: {
+                    "total": round(breakdown.total, 4),
+                    "goal": round(breakdown.goal, 4),
+                    "emotion_fit": round(breakdown.emotion_fit, 4),
+                    "cooldown": round(breakdown.cooldown, 4),
+                    "diversity": round(breakdown.diversity, 4),
+                    "mbti_align": round(breakdown.mbti_align, 4),
+                    "roleName": ((cfg_by_id.get(agent_id) or routed_models[0]).role or agent_id).strip(),
+                } for agent_id, breakdown in decision.scores.items()
             },
             "chosenSpeaker": decision.chosen_agent_id,
-            "choiceReason": decision.reason,
+            "choiceReason": decision.stop_reason,
         })
 
         if conv.should_stop:
@@ -1464,6 +1501,16 @@ async def autogen_generate_stream_routed(request: ChatGenerateRequest) -> AsyncG
         "totalTurns": len(replies),
     }
     enhanced_meta["registryConfigured"] = bool(_registry_ready_models(registry))
+    if consensus_scheduler:
+        enhanced_meta["consensusMetrics"] = consensus_scheduler.get_metrics()
+        enhanced_meta["opinionSnapshots"] = [
+            {"sessionId": s.session_id, "turn": s.turn,
+             "agentOpinions": json.dumps(s.agent_opinions, ensure_ascii=False),
+             "pairwiseDistances": json.dumps(s.pairwise_distances, ensure_ascii=False),
+             "avgDistance": s.avg_distance, "allStable": s.all_stable,
+             "createdAt": s.timestamp}
+            for s in consensus_scheduler.opinion_table.snapshots
+        ]
     yield _sse("done", ChatGenerateResponse(replies=replies, routerMeta=enhanced_meta).model_dump_json())
 
 
@@ -1904,8 +1951,10 @@ async def rate_intervention_slash(payload: InterventionRateRequest) -> Intervent
     return await rate_intervention(payload)
 
 
-@app.get("/autogen/health")
-async def health() -> Dict[str, Any]:
+class KnowledgeMediateRequest(BaseModel):
+    corpus: str = Field(default="")
+    models: List[ModelConfig] = Field(default_factory=list)
+    minJaccard: float | None = Field(default=None)
 
 
 @app.post("/autogen/knowledge/mediate")
@@ -1946,12 +1995,6 @@ async def knowledge_mediate(payload: KnowledgeMediateRequest) -> Dict[str, Any]:
     }
 
 
-class KnowledgeMediateRequest(BaseModel):
-    corpus: str = Field(default="")
-    models: List[ModelConfig] = Field(default_factory=list)
-    minJaccard: float | None = Field(default=None)
-
-
 @app.get("/autogen/health")
 async def health() -> Dict[str, Any]:
     route_table = _parse_model_routes()
@@ -1976,6 +2019,7 @@ async def generate(payload: ChatGenerateRequest) -> ChatGenerateResponse:
 @app.post("/autogen/generate/stream")
 async def generate_stream(payload: ChatGenerateRequest) -> StreamingResponse:
     if _is_router_enabled(payload):
+        print(f"router正常启动，{payload}")
         return StreamingResponse(
             autogen_generate_stream_routed(payload), media_type="text/event-stream"
         )

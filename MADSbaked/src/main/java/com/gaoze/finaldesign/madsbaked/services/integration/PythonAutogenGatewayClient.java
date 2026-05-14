@@ -106,7 +106,7 @@ public class PythonAutogenGatewayClient {
         }
         AutogenRequest request = new AutogenRequest(
                 sessionId, topic, scenario, userMessage, models,
-                blockingMaxRounds, routerEnabled, "none", null
+                blockingMaxRounds, routerEnabled, routerStrategy, convergenceThreshold
         );
         return webClient
                 .post()
@@ -152,6 +152,29 @@ public class PythonAutogenGatewayClient {
             List<ModelConfigDto> models,
             String userMessage
     ) {
+        return streamReplies(sessionId, topic, scenario, models, userMessage, null, null);
+    }
+
+    public Flux<StreamEvent> streamReplies(
+            String sessionId,
+            String topic,
+            String scenario,
+            List<ModelConfigDto> models,
+            String userMessage,
+            String strategyOverride
+    ) {
+        return streamReplies(sessionId, topic, scenario, models, userMessage, strategyOverride, null);
+    }
+
+    public Flux<StreamEvent> streamReplies(
+            String sessionId,
+            String topic,
+            String scenario,
+            List<ModelConfigDto> models,
+            String userMessage,
+            String strategyOverride,
+            Integer maxRoundsOverride
+    ) {
         if (gatewayUrl.isBlank()) {
             return Flux.just(new StreamEvent("done", "{\"replies\":[]}"));
         }
@@ -160,9 +183,13 @@ public class PythonAutogenGatewayClient {
                     .map(result -> new StreamEvent("done", toDonePayload(result)))
                     .flux();
         }
+        String effectiveStrategy = (strategyOverride != null && !strategyOverride.isBlank())
+                ? strategyOverride.trim() : routerStrategy;
+        int effectiveMaxRounds = (maxRoundsOverride != null && maxRoundsOverride > 0)
+                ? maxRoundsOverride : streamMaxRounds;
         AutogenRequest request = new AutogenRequest(
                 sessionId, topic, scenario, userMessage, models,
-                streamMaxRounds, routerEnabled, routerStrategy, convergenceThreshold
+                effectiveMaxRounds, routerEnabled, effectiveStrategy, convergenceThreshold
         );
         return webClient
                 .post()
